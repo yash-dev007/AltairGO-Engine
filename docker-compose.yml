@@ -1,0 +1,58 @@
+version: "3.9"
+services:
+  postgres:
+    image: postgis/postgis:15-3.4
+    container_name: altairgo_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: altairgo
+      POSTGRES_USER: altairgo
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-altairgo_dev_pass}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U altairgo -d altairgo" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: altairgo_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+
+  celery_worker:
+    build: .
+    container_name: altairgo_celery_worker
+    restart: unless-stopped
+    command: celery -A backend.celery_config:celery_app worker --loglevel=info
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      DATABASE_URL: postgresql://altairgo:${DB_PASSWORD:-altairgo_dev_pass}@postgres:5432/altairgo
+    depends_on:
+      - postgres
+      - redis
+
+  celery_beat:
+    build: .
+    container_name: altairgo_celery_beat
+    restart: unless-stopped
+    command: celery -A backend.celery_config:celery_app beat --loglevel=info
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      DATABASE_URL: postgresql://altairgo:${DB_PASSWORD:-altairgo_dev_pass}@postgres:5432/altairgo
+    depends_on:
+      - postgres
+      - redis
+
+volumes:
+  pg_data:
+  redis_data:

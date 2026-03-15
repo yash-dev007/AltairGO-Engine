@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>AltairGO Mission Control</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@300;400;500;600;700;800;900&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#22c55e",
+                        "background-light": "#f8f9fa",
+                        "background-dark": "#0f172a",
+                        "navy-900": "#020617",
+                        "navy-800": "#1e293b",
+                    },
+                    fontFamily: {
+                        "display": ["Public Sans", "sans-serif"]
+                    },
+                    borderRadius: {
+                        "DEFAULT": "0.5rem",
+                        "lg": "0.75rem",
+                        "xl": "1rem",
+                        "full": "9999px"
+                    },
+                },
+            },
+        }
+    </script>
+<style>
+        body { font-family: 'Public Sans', sans-serif; }
+        .sidebar-active { background-color: rgba(34, 197, 94, 0.1); color: #22c55e; border-right: 3px solid #22c55e; }
+        .glass-card { background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(8px); }
+        .dark .glass-card { background: rgba(30, 41, 59, 0.7); }
+    </style>
+</head>
+<body class="bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 font-display">
+<div class="flex h-screen overflow-hidden">
+<!-- Sidebar -->
+<aside class="w-64 border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-navy-900 flex flex-col shrink-0">
+<div class="p-6 flex items-center gap-3">
+<div class="size-8 bg-primary rounded flex items-center justify-center text-white">
+<span class="material-symbols-outlined font-bold">rocket_launch</span>
+</div>
+<h1 class="text-xl font-extrabold tracking-tight text-slate-900 dark:text-white">Altair<span class="text-primary">GO</span></h1>
+</div>
+<nav class="flex-1 px-4 space-y-1">
+<a class="sidebar-active flex items-center gap-3 px-3 py-2.5 rounded text-sm font-semibold transition-colors" href="#">
+<span class="material-symbols-outlined text-xl">dashboard</span> Dashboard
+            </a>
+<a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-navy-800 rounded text-sm font-medium transition-colors" href="#">
+<span class="material-symbols-outlined text-xl">smart_toy</span> AI Agents
+            </a>
+<a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-navy-800 rounded text-sm font-medium transition-colors" href="#">
+<span class="material-symbols-outlined text-xl">hub</span> Network Hub
+            </a>
+<a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-navy-800 rounded text-sm font-medium transition-colors" href="#">
+<span class="material-symbols-outlined text-xl">database</span> Datasets
+            </a>
+<div class="pt-4 pb-2 px-3 text-[10px] font-bold uppercase tracking-wider text-slate-400">Settings</div>
+<a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-navy-800 rounded text-sm font-medium transition-colors" href="#">
+<span class="material-symbols-outlined text-xl">settings</span> Control Panel
+            </a>
+</nav>
+<div class="p-4 border-t border-slate-200 dark:border-slate-800">
+<div class="flex items-center gap-3 p-2 bg-slate-50 dark:bg-navy-800 rounded-lg">
+<img class="size-9 rounded-full object-cover" data-alt="User profile avatar looking professional" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDLFhV69SR98nUTkPKslnsVWVX0_NimRrdnb2MhiyBI9L7rM2Y6Rktr9OBiCGBHNjaF7I5j5f_ynEFPh3AmGp3_VxFilFB-7eS523AoYQziv0afCgGu2F7QvGwRccNtVn9c9QssKV9coWegEpvaZ_EZVNr4MAiRSbcRpaRQpGENnDLMpsaCQXrBbRCyiGcJs7n4kDssRquEgM1e4AvGJskDYWlILcOIiB6ElsZTYq_zAasn_7-ji-KVcnM1kvQpwrU1zHhcCi6ur2yG"/>
+<div class="overflow-hidden">
+<p class="text-xs font-bold truncate">Alex Chen</p>
+<p class="text-[10px] text-slate-500 truncate">Senior Controller</p>
+</div>
+</div>
+</div>
+</aside>
+<!-- Main Content -->
+<main class="flex-1 flex flex-col min-w-0 overflow-y-auto">
+<!-- Header -->
+<header class="h-16 shrink-0 border-b border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-navy-900/80 backdrop-blur sticky top-0 z-10 px-8 flex items-center justify-between">
+<div class="flex items-center gap-4">
+<h2 class="text-lg font-bold">Mission Control Dashboard</h2>
+<span class="bg-primary/10 text-primary text-[10px] px-2 py-0.5 rounded-full font-bold">SYSTEMS ONLINE</span>
+</div>
+<div class="flex items-center gap-4">
+<div class="relative hidden md:block">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-lg">search</span>
+<input class="pl-10 pr-4 py-1.5 bg-slate-100 dark:bg-navy-800 border-none rounded-full text-sm w-64 focus:ring-2 focus:ring-primary transition-all" placeholder="Global discovery search..." type="text"/>
+</div>
+<button class="size-9 flex items-center justify-center rounded-full hover:bg-slate-100 dark:hover:bg-navy-800 transition-colors">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+</div>
+</header>
+<div class="p-8 space-y-8 max-w-7xl mx-auto w-full">
+<!-- Top Section: Pulse & Vitals -->
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+<!-- Engine Pipeline Pulse -->
+<div class="lg:col-span-2 bg-white dark:bg-navy-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
+<div class="flex items-center justify-between mb-8">
+<h3 class="font-bold text-slate-700 dark:text-slate-200 flex items-center gap-2">
+<span class="material-symbols-outlined text-primary">analytics</span> Engine Pipeline Pulse
+                        </h3>
+<span class="text-xs text-slate-400">Updating live...</span>
+</div>
+<div class="relative flex justify-between items-start">
+<div class="absolute top-5 left-0 w-full h-0.5 bg-slate-100 dark:bg-slate-700 z-0"></div>
+<div class="relative z-10 flex flex-col items-center gap-2 group">
+<div class="size-10 bg-primary text-white rounded-full flex items-center justify-center shadow-lg shadow-primary/20">
+<span class="material-symbols-outlined text-xl">check</span>
+</div>
+<span class="text-[11px] font-bold text-slate-800 dark:text-slate-100">Filter</span>
+</div>
+<div class="relative z-10 flex flex-col items-center gap-2 group">
+<div class="size-10 bg-primary text-white rounded-full flex items-center justify-center shadow-lg shadow-primary/20">
+<span class="material-symbols-outlined text-xl">check</span>
+</div>
+<span class="text-[11px] font-bold text-slate-800 dark:text-slate-100">Cluster</span>
+</div>
+<div class="relative z-10 flex flex-col items-center gap-2 group">
+<div class="size-10 bg-primary text-white rounded-full flex items-center justify-center shadow-lg shadow-primary/20">
+<span class="material-symbols-outlined text-xl animate-pulse">sync</span>
+</div>
+<span class="text-[11px] font-bold text-slate-800 dark:text-slate-100">Budget</span>
+</div>
+<div class="relative z-10 flex flex-col items-center gap-2 group">
+<div class="size-10 bg-slate-200 dark:bg-slate-700 text-slate-500 rounded-full flex items-center justify-center">
+<span class="material-symbols-outlined text-xl">pending</span>
+</div>
+<span class="text-[11px] font-medium text-slate-400">Route</span>
+</div>
+<div class="relative z-10 flex flex-col items-center gap-2 group">
+<div class="size-10 bg-slate-200 dark:bg-slate-700 text-slate-500 rounded-full flex items-center justify-center">
+<span class="material-symbols-outlined text-xl">construction</span>
+</div>
+<span class="text-[11px] font-medium text-slate-400">Assemble</span>
+</div>
+<div class="relative z-10 flex flex-col items-center gap-2 group">
+<div class="size-10 bg-slate-200 dark:bg-slate-700 text-slate-500 rounded-full flex items-center justify-center">
+<span class="material-symbols-outlined text-xl">auto_awesome</span>
+</div>
+<span class="text-[11px] font-medium text-slate-400">Gemini Polish</span>
+</div>
+</div>
+</div>
+<!-- Network Vitals -->
+<div class="bg-white dark:bg-navy-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
+<h3 class="font-bold text-slate-700 dark:text-slate-200 flex items-center gap-2 mb-6">
+<span class="material-symbols-outlined text-primary">dns</span> Network Vitals
+                    </h3>
+<div class="grid grid-cols-2 gap-4">
+<div class="flex flex-col items-center gap-3">
+<div class="relative size-24">
+<svg class="size-full" viewbox="0 0 36 36">
+<circle class="stroke-slate-100 dark:stroke-slate-700" cx="18" cy="18" fill="none" r="16" stroke-width="3"></circle>
+<circle class="stroke-primary" cx="18" cy="18" fill="none" r="16" stroke-dasharray="88, 100" stroke-linecap="round" stroke-width="3"></circle>
+</svg>
+<div class="absolute inset-0 flex flex-col items-center justify-center">
+<span class="text-lg font-bold">88%</span>
+</div>
+</div>
+<p class="text-[11px] font-bold text-slate-500">Redis Cache</p>
+</div>
+<div class="flex flex-col items-center gap-3">
+<div class="relative size-24">
+<svg class="size-full" viewbox="0 0 36 36">
+<circle class="stroke-slate-100 dark:stroke-slate-700" cx="18" cy="18" fill="none" r="16" stroke-width="3"></circle>
+<circle class="stroke-blue-500" cx="18" cy="18" fill="none" r="16" stroke-dasharray="94, 100" stroke-linecap="round" stroke-width="3"></circle>
+</svg>
+<div class="absolute inset-0 flex flex-col items-center justify-center">
+<span class="text-lg font-bold">94%</span>
+</div>
+</div>
+<p class="text-[11px] font-bold text-slate-500">DB Performance</p>
+</div>
+</div>
+</div>
+</div>
+<!-- Middle Section: Chart & Health -->
+<div class="grid grid-cols-1 lg:grid-cols-4 gap-8">
+<!-- Traffic & Revenue Trend -->
+<div class="lg:col-span-3 bg-white dark:bg-navy-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
+<div class="flex items-center justify-between mb-6">
+<h3 class="font-bold text-slate-700 dark:text-slate-200 flex items-center gap-2">
+<span class="material-symbols-outlined text-primary">trending_up</span> Traffic &amp; Revenue Trend
+                        </h3>
+<div class="flex gap-2">
+<button class="px-3 py-1 text-[10px] font-bold bg-slate-100 dark:bg-navy-700 rounded border border-slate-200 dark:border-slate-600">7 Days</button>
+<button class="px-3 py-1 text-[10px] font-bold bg-primary text-white rounded border border-primary">30 Days</button>
+</div>
+</div>
+<div class="h-64 relative">
+<!-- Simplified Area Chart Representation using CSS and SVGs -->
+<div class="absolute inset-0 flex items-end justify-between px-2 opacity-50">
+<div class="w-[10%] bg-primary/20 h-[30%] rounded-t"></div>
+<div class="w-[10%] bg-primary/20 h-[45%] rounded-t"></div>
+<div class="w-[10%] bg-primary/20 h-[40%] rounded-t"></div>
+<div class="w-[10%] bg-primary/30 h-[60%] rounded-t"></div>
+<div class="w-[10%] bg-primary/40 h-[75%] rounded-t"></div>
+<div class="w-[10%] bg-primary/50 h-[85%] rounded-t"></div>
+<div class="w-[10%] bg-primary/60 h-[70%] rounded-t"></div>
+<div class="w-[10%] bg-primary/70 h-[90%] rounded-t"></div>
+</div>
+<svg class="absolute inset-0 w-full h-full" preserveaspectratio="none" viewbox="0 0 800 200">
+<path d="M0,150 Q100,120 200,160 T400,100 T600,60 T800,40 L800,200 L0,200 Z" fill="url(#grad)" fill-opacity="0.2"></path>
+<path d="M0,150 Q100,120 200,160 T400,100 T600,60 T800,40" fill="none" stroke="#22c55e" stroke-width="4"></path>
+<defs>
+<lineargradient id="grad" x1="0%" x2="0%" y1="0%" y2="100%">
+<stop offset="0%" style="stop-color:#22c55e;stop-opacity:1"></stop>
+<stop offset="100%" style="stop-color:#22c55e;stop-opacity:0"></stop>
+</lineargradient>
+</defs>
+</svg>
+<div class="absolute inset-0 grid grid-cols-1 grid-rows-4 pointer-events-none">
+<div class="border-t border-slate-100 dark:border-slate-700/50"></div>
+<div class="border-t border-slate-100 dark:border-slate-700/50"></div>
+<div class="border-t border-slate-100 dark:border-slate-700/50"></div>
+<div class="border-t border-slate-100 dark:border-slate-700/50"></div>
+</div>
+</div>
+</div>
+<!-- Agent Health Matrix -->
+<div class="bg-white dark:bg-navy-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
+<h3 class="font-bold text-slate-700 dark:text-slate-200 flex items-center gap-2 mb-6">
+<span class="material-symbols-outlined text-primary">health_and_safety</span> Agent Health
+                    </h3>
+<div class="space-y-4">
+<div class="flex items-center justify-between">
+<span class="text-sm font-medium">Itinerary QA</span>
+<span class="px-2 py-1 bg-primary/10 text-primary text-[10px] font-bold rounded">OPTIMAL</span>
+</div>
+<div class="flex items-center justify-between border-t border-slate-50 dark:border-slate-700 pt-3">
+<span class="text-sm font-medium">Context Scraper</span>
+<span class="px-2 py-1 bg-primary/10 text-primary text-[10px] font-bold rounded">STABLE</span>
+</div>
+<div class="flex items-center justify-between border-t border-slate-50 dark:border-slate-700 pt-3">
+<span class="text-sm font-medium">Budget Engine</span>
+<span class="px-2 py-1 bg-yellow-500/10 text-yellow-500 text-[10px] font-bold rounded">BUSY</span>
+</div>
+<div class="flex items-center justify-between border-t border-slate-50 dark:border-slate-700 pt-3">
+<span class="text-sm font-medium">NLP Optimizer</span>
+<span class="px-2 py-1 bg-primary/10 text-primary text-[10px] font-bold rounded">OPTIMAL</span>
+</div>
+<div class="flex items-center justify-between border-t border-slate-50 dark:border-slate-700 pt-3">
+<span class="text-sm font-medium">Image Gen Beta</span>
+<span class="px-2 py-1 bg-slate-100 dark:bg-navy-700 text-slate-500 text-[10px] font-bold rounded">IDLE</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Bottom Section: Destination Requests -->
+<div class="bg-white dark:bg-navy-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden">
+<div class="p-6 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
+<h3 class="font-bold text-slate-700 dark:text-slate-200 flex items-center gap-2">
+<span class="material-symbols-outlined text-primary">explore</span> Destination Discovery Requests
+                    </h3>
+<button class="text-xs font-bold text-primary hover:underline">View All Queue</button>
+</div>
+<div class="overflow-x-auto">
+<table class="w-full text-left">
+<thead>
+<tr class="bg-slate-50 dark:bg-navy-900/50 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+<th class="px-6 py-4">Request Origin</th>
+<th class="px-6 py-4">Target Destination</th>
+<th class="px-6 py-4">Budget Profile</th>
+<th class="px-6 py-4">Confidence Score</th>
+<th class="px-6 py-4 text-right">Actions</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-slate-100 dark:divide-slate-700">
+<tr class="hover:bg-slate-50 dark:hover:bg-navy-700/30 transition-colors">
+<td class="px-6 py-4">
+<div class="flex items-center gap-2">
+<img class="size-6 rounded-full" data-alt="User avatar for discovery request" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBLbmnTp2LGlIhU5ytDtRWphG3iVlctkdM7uct9Lkn5PhtDNWXoOC1FoHJ5jxgCPNw4HQ9VfeS3sQ4x0bKjLRHXNH58eYKn1CGPJY5-Ejjd_YKEG7LWH89vR448x-r6fkFhWiQwwWzgZAShIb0WWi3ZySetwN6ABhwm0Y1cRzNA25hkNNa93IPDV8WEh4fzq8cLxWyCyTjE0G4Rkfc9Z8sqTgLCiWLznTJtxTvNE1mcCJYNVoEr28T0g89dCGvR5qutUoEhK1jMyCzj"/>
+<span class="text-sm font-medium">Marc J. (London)</span>
+</div>
+</td>
+<td class="px-6 py-4">
+<div class="flex items-center gap-2">
+<span class="text-sm">Kyoto, Japan</span>
+<span class="material-symbols-outlined text-xs text-slate-400">arrow_forward</span>
+<span class="text-sm font-semibold">Discovery Bundle</span>
+</div>
+</td>
+<td class="px-6 py-4">
+<span class="text-xs font-semibold px-2 py-0.5 bg-blue-50 dark:bg-blue-900/20 text-blue-600 rounded">Premium</span>
+</td>
+<td class="px-6 py-4">
+<div class="w-full bg-slate-100 dark:bg-slate-700 rounded-full h-1.5 max-w-[100px]">
+<div class="bg-primary h-1.5 rounded-full" style="width: 92%"></div>
+</div>
+</td>
+<td class="px-6 py-4 text-right">
+<div class="flex justify-end gap-2">
+<button class="size-8 rounded flex items-center justify-center border border-red-200 text-red-500 hover:bg-red-50 transition-colors">
+<span class="material-symbols-outlined text-lg">close</span>
+</button>
+<button class="size-8 rounded flex items-center justify-center bg-primary text-white hover:bg-primary/90 transition-colors">
+<span class="material-symbols-outlined text-lg">check</span>
+</button>
+</div>
+</td>
+</tr>
+<tr class="hover:bg-slate-50 dark:hover:bg-navy-700/30 transition-colors">
+<td class="px-6 py-4">
+<div class="flex items-center gap-2">
+<img class="size-6 rounded-full" data-alt="Female user avatar" src="https://lh3.googleusercontent.com/aida-public/AB6AXuC6-Q-dMdG_jffgAhS0Yiy6Q8wTamhXhJ1rsfq2rI2yD3f6VxE-Jwak15JKelepNEHfHFi2QofNn8y0fG49CPQf-z3oi2EMBJSUVab8ERdwoeD6t9Z6miztKoKrXPD4kGAh9K2pL1nOMtTg1wwH940g_bgaJFCUK4RN-Y07ITjwRoezqW7LDOi_Unze5hOOfE2l4kfEwzyAB5pTVUz9eXb7CjXp6d4axEaxKKRHezEm2D1-9xbNoqQy3FjT5NQ0gOz9HXvMZWxZZ5ef"/>
+<span class="text-sm font-medium">Sarah L. (NYC)</span>
+</div>
+</td>
+<td class="px-6 py-4">
+<div class="flex items-center gap-2">
+<span class="text-sm">Tulum, Mexico</span>
+<span class="material-symbols-outlined text-xs text-slate-400">arrow_forward</span>
+<span class="text-sm font-semibold">Eco-Retreat</span>
+</div>
+</td>
+<td class="px-6 py-4">
+<span class="text-xs font-semibold px-2 py-0.5 bg-green-50 dark:bg-green-900/20 text-green-600 rounded">Standard</span>
+</td>
+<td class="px-6 py-4">
+<div class="w-full bg-slate-100 dark:bg-slate-700 rounded-full h-1.5 max-w-[100px]">
+<div class="bg-primary h-1.5 rounded-full" style="width: 78%"></div>
+</div>
+</td>
+<td class="px-6 py-4 text-right">
+<div class="flex justify-end gap-2">
+<button class="size-8 rounded flex items-center justify-center border border-red-200 text-red-500 hover:bg-red-50 transition-colors">
+<span class="material-symbols-outlined text-lg">close</span>
+</button>
+<button class="size-8 rounded flex items-center justify-center bg-primary text-white hover:bg-primary/90 transition-colors">
+<span class="material-symbols-outlined text-lg">check</span>
+</button>
+</div>
+</td>
+</tr>
+<tr class="hover:bg-slate-50 dark:hover:bg-navy-700/30 transition-colors">
+<td class="px-6 py-4">
+<div class="flex items-center gap-2">
+<div class="size-6 bg-slate-200 dark:bg-slate-700 rounded-full flex items-center justify-center text-[10px] font-bold">AK</div>
+<span class="text-sm font-medium">Anon (Berlin)</span>
+</div>
+</td>
+<td class="px-6 py-4">
+<div class="flex items-center gap-2">
+<span class="text-sm">Oslo, Norway</span>
+<span class="material-symbols-outlined text-xs text-slate-400">arrow_forward</span>
+<span class="text-sm font-semibold">Workation</span>
+</div>
+</td>
+<td class="px-6 py-4">
+<span class="text-xs font-semibold px-2 py-0.5 bg-slate-100 dark:bg-navy-900/50 text-slate-600 rounded">Economy</span>
+</td>
+<td class="px-6 py-4">
+<div class="w-full bg-slate-100 dark:bg-slate-700 rounded-full h-1.5 max-w-[100px]">
+<div class="bg-primary h-1.5 rounded-full" style="width: 45%"></div>
+</div>
+</td>
+<td class="px-6 py-4 text-right">
+<div class="flex justify-end gap-2">
+<button class="size-8 rounded flex items-center justify-center border border-red-200 text-red-500 hover:bg-red-50 transition-colors">
+<span class="material-symbols-outlined text-lg">close</span>
+</button>
+<button class="size-8 rounded flex items-center justify-center bg-primary text-white hover:bg-primary/90 transition-colors">
+<span class="material-symbols-outlined text-lg">check</span>
+</button>
+</div>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+</main>
+</div>
+</body></html>

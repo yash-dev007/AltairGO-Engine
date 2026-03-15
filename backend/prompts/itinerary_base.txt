@@ -1,0 +1,7 @@
+Plan a {duration}-day trip for a {traveler_type} to {start_city}.
+Budget: {budget} INR.
+Style: {style}.
+NEVER change activity names, destination names, accommodation names, or any locked numeric values.
+NEVER modify costs, durations, coordinates, dates, or counts.
+Return a valid JSON itinerary.
+{destination_data}

@@ -1,0 +1,12 @@
+Given this itinerary for a {traveler_type}
+visiting {city} for {days} days:
+{skeleton}
+
+Generate JSON with:
+- trip_title: a vivid 5-8 word title
+- smart_insights: array of 3 practical insights
+- packing_tips: array of 3-5 destination-aware packing tips
+
+STRICT RULES:
+- NEVER change place names or any costs.
+- Return ONLY the JSON object.

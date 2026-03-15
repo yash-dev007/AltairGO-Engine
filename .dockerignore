@@ -1,0 +1,13 @@
+.env
+.env.*
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+node_modules/
+dummy-frontend/node_modules/
+.git/
+dist/
+build/
+*.egg-info/
+backend/tests/

@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>AltairGO Network Hub</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@300;400;500;600;700;800;900&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#10b981", // Emerald green for the "green-accented theme"
+                        "background-light": "#f8fafc",
+                        "background-dark": "#020617",
+                    },
+                    fontFamily: {
+                        "display": ["Public Sans", "sans-serif"]
+                    },
+                    borderRadius: { "DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px" },
+                },
+            },
+        }
+    </script>
+<style>
+        .glass {
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+        .dark .glass {
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+    </style>
+</head>
+<body class="bg-background-light dark:bg-background-dark font-display text-slate-900 dark:text-slate-100 antialiased">
+<div class="flex min-h-screen">
+<!-- SideNavBar -->
+<aside class="w-64 border-r border-slate-200 dark:border-slate-800 flex flex-col fixed h-full bg-white/50 dark:bg-slate-900/50 backdrop-blur-md z-50">
+<div class="p-6 flex flex-col h-full">
+<div class="flex items-center gap-3 mb-10">
+<div class="bg-primary rounded-lg p-2 text-white">
+<span class="material-symbols-outlined">hub</span>
+</div>
+<div>
+<h1 class="text-lg font-bold leading-tight">AltairGO</h1>
+<p class="text-xs text-slate-500 dark:text-slate-400">Network Admin</p>
+</div>
+</div>
+<nav class="flex-1 space-y-2">
+<a class="flex items-center gap-3 px-3 py-2 text-slate-600 dark:text-slate-400 hover:bg-primary/10 hover:text-primary rounded-xl transition-colors" href="#">
+<span class="material-symbols-outlined">dashboard</span>
+<span class="text-sm font-medium">Dashboard</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 bg-primary/10 text-primary rounded-xl transition-colors" href="#">
+<span class="material-symbols-outlined">public</span>
+<span class="text-sm font-medium">Network Hub</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 text-slate-600 dark:text-slate-400 hover:bg-primary/10 hover:text-primary rounded-xl transition-colors" href="#">
+<span class="material-symbols-outlined">shield</span>
+<span class="text-sm font-medium">Security</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 text-slate-600 dark:text-slate-400 hover:bg-primary/10 hover:text-primary rounded-xl transition-colors" href="#">
+<span class="material-symbols-outlined">settings</span>
+<span class="text-sm font-medium">Settings</span>
+</a>
+</nav>
+<div class="mt-auto pt-6 border-t border-slate-200 dark:border-slate-800 space-y-4">
+<button class="w-full flex items-center justify-center gap-2 bg-primary text-white py-2.5 rounded-xl font-bold text-sm hover:opacity-90 transition-opacity">
+<span class="material-symbols-outlined text-sm">upgrade</span>
+                        Upgrade Node
+                    </button>
+<button class="w-full flex items-center gap-3 px-3 py-2 text-slate-600 dark:text-slate-400 hover:text-red-500 transition-colors">
+<span class="material-symbols-outlined">logout</span>
+<span class="text-sm font-medium">Logout</span>
+</button>
+</div>
+</div>
+</aside>
+<!-- Main Content -->
+<main class="flex-1 ml-64 p-8">
+<header class="flex justify-between items-end mb-8">
+<div>
+<h2 class="text-3xl font-black tracking-tight mb-1">Network Hub</h2>
+<p class="text-slate-500 dark:text-slate-400">Global connectivity and system vitals monitoring</p>
+</div>
+<div class="flex gap-3">
+<div class="glass px-4 py-2 rounded-xl flex items-center gap-2">
+<div class="w-2 h-2 rounded-full bg-primary animate-pulse"></div>
+<span class="text-xs font-semibold uppercase tracking-wider">System Live</span>
+</div>
+</div>
+</header>
+<!-- Map Section -->
+<div class="mb-8 relative group">
+<div class="glass rounded-2xl overflow-hidden aspect-[21/9] relative shadow-xl shadow-primary/5">
+<div class="absolute inset-0 bg-slate-200/20 dark:bg-slate-800/20"></div>
+<img class="w-full h-full object-cover opacity-60 dark:opacity-40 grayscale group-hover:grayscale-0 transition-all duration-700" data-alt="Futuristic world map with network connections" data-location="Global" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDunYhmSUfFIwOrqXJ2hJTrQU3VQqOSQY1zO2KjeYkX54gR8GimgwlIhJlTUYZUbwCHjxWpkUkGlM3KnEB-s6RTODEdM_WixntMl2yivZspvMfbkdwpUmXCf-E_TUcNSGVhceNy2lWNcgiq99FQILpgYny0v8wEoKjhGOXjtbkWM86XSRxkxHtfYi0gkdHkJ1o0kMDb_YERqNZ3WmAZJP-IcgetQI2MUfgsrjKqmqjGcQUMBiMUwhOhapab-J07xBagsjNryxcXDBeU"/>
+<!-- US-East Node -->
+<div class="absolute top-1/3 left-1/4 group/node">
+<div class="relative">
+<div class="absolute -inset-2 bg-primary/30 rounded-full animate-ping"></div>
+<div class="w-4 h-4 bg-primary rounded-full border-2 border-white dark:border-slate-900 z-10 relative"></div>
+<div class="absolute top-6 left-1/2 -translate-x-1/2 glass px-2 py-1 rounded text-[10px] font-bold whitespace-nowrap opacity-0 group-hover/node:opacity-100 transition-opacity uppercase">US-East</div>
+</div>
+</div>
+<!-- EU-West Node -->
+<div class="absolute top-1/4 left-[48%] group/node">
+<div class="relative">
+<div class="absolute -inset-2 bg-primary/30 rounded-full animate-ping" style="animation-delay: 1s;"></div>
+<div class="w-4 h-4 bg-primary rounded-full border-2 border-white dark:border-slate-900 z-10 relative"></div>
+<div class="absolute top-6 left-1/2 -translate-x-1/2 glass px-2 py-1 rounded text-[10px] font-bold whitespace-nowrap opacity-0 group-hover/node:opacity-100 transition-opacity uppercase">EU-West</div>
+</div>
+</div>
+<!-- Asia-South Node -->
+<div class="absolute top-1/2 left-[75%] group/node">
+<div class="relative">
+<div class="absolute -inset-2 bg-primary/30 rounded-full animate-ping" style="animation-delay: 2s;"></div>
+<div class="w-4 h-4 bg-primary rounded-full border-2 border-white dark:border-slate-900 z-10 relative"></div>
+<div class="absolute top-6 left-1/2 -translate-x-1/2 glass px-2 py-1 rounded text-[10px] font-bold whitespace-nowrap opacity-0 group-hover/node:opacity-100 transition-opacity uppercase">Asia-South</div>
+</div>
+</div>
+<div class="absolute bottom-6 left-6 flex gap-4">
+<div class="glass px-4 py-2 rounded-xl">
+<p class="text-[10px] font-bold text-slate-500 uppercase">Active Nodes</p>
+<p class="text-xl font-bold">12</p>
+</div>
+<div class="glass px-4 py-2 rounded-xl">
+<p class="text-[10px] font-bold text-slate-500 uppercase">Global Uptime</p>
+<p class="text-xl font-bold text-primary">99.9%</p>
+</div>
+</div>
+</div>
+</div>
+<!-- Vitals Grid -->
+<div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+<div class="glass p-6 rounded-2xl border-l-4 border-l-primary">
+<div class="flex items-center justify-between mb-4">
+<p class="text-sm font-semibold text-slate-500 uppercase">CPU Load</p>
+<span class="material-symbols-outlined text-primary">memory</span>
+</div>
+<div class="flex items-baseline gap-2">
+<h3 class="text-4xl font-black">42%</h3>
+<span class="text-sm font-bold text-primary">-2%</span>
+</div>
+<div class="w-full bg-slate-200 dark:bg-slate-800 h-1.5 rounded-full mt-4 overflow-hidden">
+<div class="bg-primary h-full w-[42%]"></div>
+</div>
+</div>
+<div class="glass p-6 rounded-2xl border-l-4 border-l-primary">
+<div class="flex items-center justify-between mb-4">
+<p class="text-sm font-semibold text-slate-500 uppercase">Memory Usage</p>
+<span class="material-symbols-outlined text-primary">storage</span>
+</div>
+<div class="flex items-baseline gap-2">
+<h3 class="text-4xl font-black">68%</h3>
+<span class="text-sm font-bold text-primary">+5%</span>
+</div>
+<div class="w-full bg-slate-200 dark:bg-slate-800 h-1.5 rounded-full mt-4 overflow-hidden">
+<div class="bg-primary h-full w-[68%]"></div>
+</div>
+</div>
+<div class="glass p-6 rounded-2xl border-l-4 border-l-primary">
+<div class="flex items-center justify-between mb-4">
+<p class="text-sm font-semibold text-slate-500 uppercase">Latency</p>
+<span class="material-symbols-outlined text-primary">speed</span>
+</div>
+<div class="flex items-baseline gap-2">
+<h3 class="text-4xl font-black">12ms</h3>
+<span class="text-sm font-bold text-red-500">+1ms</span>
+</div>
+<div class="w-full bg-slate-200 dark:bg-slate-800 h-1.5 rounded-full mt-4 overflow-hidden">
+<div class="bg-primary h-full w-[15%]"></div>
+</div>
+</div>
+</div>
+<!-- Detailed Stats Grid -->
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+<!-- API Endpoint Monitor -->
+<div class="glass rounded-2xl overflow-hidden">
+<div class="px-6 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+<h3 class="font-bold">API Endpoint Monitor</h3>
+<button class="text-xs font-bold text-primary hover:underline">View All</button>
+</div>
+<div class="overflow-x-auto">
+<table class="w-full text-left">
+<thead>
+<tr class="text-[10px] font-black text-slate-500 uppercase bg-slate-50 dark:bg-slate-900/50">
+<th class="px-6 py-3">Endpoint</th>
+<th class="px-6 py-3">Status</th>
+<th class="px-6 py-3">Response</th>
+<th class="px-6 py-3">Load</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-slate-200 dark:divide-slate-800">
+<tr class="hover:bg-slate-50/50 dark:hover:bg-slate-800/50 transition-colors">
+<td class="px-6 py-4 font-medium text-sm">/v1/auth/login</td>
+<td class="px-6 py-4">
+<span class="inline-flex items-center gap-1.5 bg-primary/10 text-primary px-2 py-0.5 rounded-full text-[10px] font-bold uppercase">
+<span class="w-1.5 h-1.5 bg-primary rounded-full"></span> Active
+                                        </span>
+</td>
+<td class="px-6 py-4 text-sm">45ms</td>
+<td class="px-6 py-4 text-sm">Low</td>
+</tr>
+<tr class="hover:bg-slate-50/50 dark:hover:bg-slate-800/50 transition-colors">
+<td class="px-6 py-4 font-medium text-sm">/v1/user/profile</td>
+<td class="px-6 py-4">
+<span class="inline-flex items-center gap-1.5 bg-primary/10 text-primary px-2 py-0.5 rounded-full text-[10px] font-bold uppercase">
+<span class="w-1.5 h-1.5 bg-primary rounded-full"></span> Active
+                                        </span>
+</td>
+<td class="px-6 py-4 text-sm">112ms</td>
+<td class="px-6 py-4 text-sm">Med</td>
+</tr>
+<tr class="hover:bg-slate-50/50 dark:hover:bg-slate-800/50 transition-colors">
+<td class="px-6 py-4 font-medium text-sm">/v1/billing/subs</td>
+<td class="px-6 py-4">
+<span class="inline-flex items-center gap-1.5 bg-yellow-500/10 text-yellow-500 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase">
+<span class="w-1.5 h-1.5 bg-yellow-500 rounded-full"></span> Degraded
+                                        </span>
+</td>
+<td class="px-6 py-4 text-sm">450ms</td>
+<td class="px-6 py-4 text-sm text-red-500">High</td>
+</tr>
+<tr class="hover:bg-slate-50/50 dark:hover:bg-slate-800/50 transition-colors">
+<td class="px-6 py-4 font-medium text-sm">/v2/search/global</td>
+<td class="px-6 py-4">
+<span class="inline-flex items-center gap-1.5 bg-primary/10 text-primary px-2 py-0.5 rounded-full text-[10px] font-bold uppercase">
+<span class="w-1.5 h-1.5 bg-primary rounded-full"></span> Active
+                                        </span>
+</td>
+<td class="px-6 py-4 text-sm">82ms</td>
+<td class="px-6 py-4 text-sm">Low</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<!-- Redis Cache Performance -->
+<div class="glass rounded-2xl p-6 flex flex-col">
+<div class="flex items-center justify-between mb-6">
+<h3 class="font-bold">Redis Cache Performance</h3>
+<div class="flex items-center gap-2">
+<span class="text-[10px] font-bold text-slate-400">DB: 0</span>
+<span class="material-symbols-outlined text-primary text-lg">database</span>
+</div>
+</div>
+<div class="space-y-6 flex-1">
+<div class="flex justify-between items-end">
+<div>
+<p class="text-[10px] font-bold text-slate-500 uppercase mb-1">Hit Rate</p>
+<p class="text-3xl font-black">94.2%</p>
+</div>
+<div class="text-right">
+<p class="text-[10px] font-bold text-slate-500 uppercase mb-1">Evictions</p>
+<p class="text-lg font-bold">0</p>
+</div>
+</div>
+<div class="grid grid-cols-4 gap-2 items-end h-24">
+<div class="bg-primary/20 hover:bg-primary rounded-t transition-colors h-[60%]"></div>
+<div class="bg-primary/20 hover:bg-primary rounded-t transition-colors h-[85%]"></div>
+<div class="bg-primary/20 hover:bg-primary rounded-t transition-colors h-[40%]"></div>
+<div class="bg-primary hover:bg-primary rounded-t transition-colors h-[94%]"></div>
+</div>
+<div class="grid grid-cols-2 gap-4">
+<div class="bg-slate-50 dark:bg-slate-900/50 p-4 rounded-xl border border-slate-100 dark:border-slate-800">
+<p class="text-[10px] font-bold text-slate-500 uppercase">Total Memory</p>
+<p class="text-xl font-bold">4.2 GB</p>
+</div>
+<div class="bg-slate-50 dark:bg-slate-900/50 p-4 rounded-xl border border-slate-100 dark:border-slate-800">
+<p class="text-[10px] font-bold text-slate-500 uppercase">Connected Clients</p>
+<p class="text-xl font-bold">1,842</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+</main>
+</div>
+</body></html>

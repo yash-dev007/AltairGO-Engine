@@ -1,0 +1,229 @@
+import os
+from uuid import uuid4
+
+from flask import Blueprint, current_app, jsonify, request, g
+from flask_jwt_extended import get_jwt_identity, jwt_required, verify_jwt_in_request
+import structlog
+
+from backend.database import db
+from backend.engine.orchestrator import TripGenerationOrchestrator
+from backend.extensions import limiter
+from backend.models import AnalyticsEvent, AsyncJob, Trip
+from backend.request_validation import load_request_json
+from backend.schemas import GenerateItinerarySchema, SaveTripSchema
+from backend.services.gemini_service import get_gemini_service
+from backend.services.cache_service import get_cached, set_cached
+from backend.utils.helpers import _extract_destination_names, _is_truthy
+
+trips_bp = Blueprint("trips", __name__)
+log = structlog.get_logger(__name__)
+GEMINI_SERVICE = get_gemini_service()
+
+
+@trips_bp.route("/generate-itinerary", methods=["POST"])
+@limiter.limit("5 per minute")
+def generate_itinerary():
+    # Throttle anonymous itinerary generation so one IP cannot exhaust API quota.
+    data, error = load_request_json(GenerateItinerarySchema())
+    if error:
+        return error
+
+    destination_names = _extract_destination_names(data)
+    if not destination_names:
+        return jsonify({"error": "At least one selected destination is required"}), 400
+
+    try:
+        request_user_id = None
+        try:
+            verify_jwt_in_request(optional=True)
+            request_user_id = get_jwt_identity()
+        except Exception as exc:
+            log.warning(f"Could not verify JWT for itinerary job: {exc}")
+
+        job_id = str(uuid4())
+
+        cache_prefs = {
+            "origin_city": data["start_city"],
+            "destination_names": sorted(destination_names),
+            "budget": data["budget"],
+            "duration": data["duration"],
+            "travelers": data.get("travelers", 1),
+            "style": data.get("style", "standard"),
+            "traveler_type": data.get("traveler_type", "couple"),
+            "travel_month": data.get("travel_month", "any"),
+            "start_date": data.get("start_date"),
+        }
+        cached_result = get_cached(cache_prefs)
+        if cached_result:
+            job = AsyncJob(
+                id=job_id,
+                user_id=request_user_id,
+                status="completed",
+                payload=data,
+                result=cached_result,
+            )
+            db.session.add(job)
+            db.session.commit()
+            log.info("Returning cached itinerary via completed async job")
+            return jsonify({"job_id": job_id, "status": "completed"}), 202
+
+        job = AsyncJob(
+            id=job_id,
+            user_id=request_user_id,
+            status="queued",
+            payload=data,
+        )
+        db.session.add(job)
+        db.session.add(AnalyticsEvent(
+            event_type="GenerateItineraryQueued",
+            user_id=request_user_id,
+            payload={
+                **data,
+                "use_engine": data.get("use_engine", True),
+                "origin_city": data["start_city"],
+                "selected_destination_names": destination_names,
+                "job_id": job_id,
+            },
+        ))
+        db.session.commit()
+
+        # Offload itinerary generation to Celery so long-running Gemini calls do not occupy request workers.
+        from backend.celery_tasks import generate_itinerary_job
+        generate_itinerary_job.delay(job_id)
+
+        return jsonify({"job_id": job_id, "status": "queued"}), 202
+
+    except Exception as exc:
+        db.session.rollback()
+        log.exception("itinerary.generation_failed")
+        error_msg = str(exc) if os.getenv("TESTING") == "true" else "Internal server error"
+        return jsonify({
+            "error": error_msg,
+            "request_id": getattr(g, "request_id", None)
+        }), 500
+
+
+@trips_bp.route("/get-itinerary-status/<job_id>", methods=["GET"])
+def get_itinerary_status(job_id):
+    try:
+        job = db.session.get(AsyncJob, job_id)
+        if not job:
+            return jsonify({"error": "Job not found"}), 404
+
+        body = {
+            "job_id": job.id,
+            "status": job.status,
+        }
+        if job.result is not None:
+            body["result"] = job.result
+        if job.error_message:
+            body["error"] = job.error_message
+        return jsonify(body), 200
+    except Exception:
+        log.exception("itinerary.status_fetch_failed")
+        return jsonify({
+            "error": "Internal server error",
+            "request_id": getattr(g, "request_id", None)
+        }), 500
+
+
+@trips_bp.route("/api/save-trip", methods=["POST"])
+@jwt_required()
+def save_trip():
+    # Validate saved-trip payloads so malformed itinerary submissions fail with field-level errors.
+    data, error = load_request_json(SaveTripSchema())
+    if error:
+        return error
+    user_id = get_jwt_identity()
+
+    try:
+        new_trip = Trip(
+            user_id=user_id,
+            trip_title=data.get("trip_title"),
+            destination_country=data.get("destination_country"),
+            budget=data.get("budget"),
+            duration=data.get("duration"),
+            travelers=data.get("travelers", 1),
+            style=data.get("style"),
+            date_type=data.get("date_type"),
+            start_date=data.get("start_date"),
+            traveler_type=data.get("traveler_type"),
+            total_cost=data.get("total_cost"),
+            itinerary_json=data.get("itinerary_json"),
+        )
+        db.session.add(new_trip)
+        db.session.commit()
+        return jsonify({"trip_id": new_trip.id, "message": "Trip saved successfully"}), 201
+    except Exception:
+        db.session.rollback()
+        log.exception("trip.save_failed")
+        return jsonify({
+            "error": "Internal server error",
+            "request_id": getattr(g, "request_id", None)
+        }), 500
+
+
+@trips_bp.route("/get-trip/<int:trip_id>", methods=["GET"])
+@jwt_required()
+def get_trip(trip_id):
+    try:
+        user_id = int(get_jwt_identity())
+        trip = db.session.get(Trip, trip_id)
+        if not trip or trip.user_id != user_id:
+            return jsonify({"error": "Trip not found"}), 404
+
+        return jsonify({
+            "id": trip.id,
+            "trip_title": trip.trip_title,
+            "destination_country": trip.destination_country,
+            "budget": trip.budget,
+            "duration": trip.duration,
+            "travelers": trip.travelers,
+            "style": trip.style,
+            "date_type": trip.date_type,
+            "start_date": trip.start_date,
+            "traveler_type": trip.traveler_type,
+            "total_cost": trip.total_cost,
+            "itinerary_json": trip.itinerary_json,
+            "created_at": trip.created_at.isoformat() if trip.created_at else None,
+        }), 200
+    except Exception:
+        log.exception("trip.fetch_failed")
+        return jsonify({
+            "error": "Internal server error",
+            "request_id": getattr(g, "request_id", None)
+        }), 500
+
+
+@trips_bp.route("/api/user/trips", methods=["GET"])
+@jwt_required()
+def get_user_trips():
+    try:
+        user_id = get_jwt_identity()
+        page = max(request.args.get("page", type=int, default=1), 1)
+        page_size = min(request.args.get("page_size", type=int, default=50), 200)
+
+        query = db.session.query(Trip).filter_by(user_id=user_id).order_by(Trip.created_at.desc())
+        total = query.count()
+        items = query.limit(page_size).offset((page - 1) * page_size).all()
+
+        return jsonify({
+            "items": [{
+                "id": t.id,
+                "trip_title": t.trip_title,
+                "destination_country": t.destination_country,
+                "budget": t.budget,
+                "duration": t.duration,
+                "created_at": t.created_at.isoformat() if t.created_at else None,
+            } for t in items],
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "total_pages": -(-total // page_size),
+        }), 200
+    except Exception:
+        log.exception("user_trips.fetch_failed")
+        return jsonify({
+            "error": "Internal server error",
+            "request_id": getattr(g, "request_id", None)
+        }), 500
