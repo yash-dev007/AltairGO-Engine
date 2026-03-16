@@ -15,13 +15,13 @@ if TESTING:
     # This requires sqlalchemy to be installed (which it is).
     broker_url = "sqla+sqlite:///:memory:"
     result_backend = "db+sqlite:///:memory:"
-    celery_app = Celery("altairgo", broker=broker_url, backend=result_backend)
+    celery_app = Celery("altairgo", broker=broker_url, backend=result_backend, include=["backend.celery_tasks"])
     celery_app.conf.update(
         task_always_eager=True,
         task_eager_propagates=True,
     )
 else:
-    celery_app = Celery("altairgo", broker=REDIS_URL, backend=REDIS_URL)
+    celery_app = Celery("altairgo", broker=REDIS_URL, backend=REDIS_URL, include=["backend.celery_tasks"])
 
 celery_app.conf.update(
     task_serializer="json",

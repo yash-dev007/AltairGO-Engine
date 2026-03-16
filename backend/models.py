@@ -28,12 +28,20 @@ else:
 
 class AnalyticsEvent(Base):
     __tablename__ = 'analytics_event'
-    
-    id             = Column(Integer, primary_key=True)
-    event_type     = Column(String(100), nullable=False)
-    user_id        = Column(Integer, nullable=True)
-    payload        = Column(JSON, nullable=True)
-    created_at     = Column(DateTime(timezone=True), server_default=func.now())
+    id = Column(Integer, primary_key=True)
+    event_type = Column(String(100), nullable=False)
+    user_id = Column(Integer, nullable=True)
+    payload = Column(JSON, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class EngineSetting(Base):
+    """Stores dynamic configuration for the intelligence engine."""
+    __tablename__ = 'engine_settings'
+    id = Column(Integer, primary_key=True)
+    key = Column(String(100), unique=True, nullable=False, index=True)
+    value = Column(String(500), nullable=False)
+    description = Column(String(255))
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
 class User(Base):
     __tablename__ = 'user'

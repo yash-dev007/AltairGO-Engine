@@ -14,7 +14,7 @@ import {
     LogOut
 } from 'lucide-react';
 
-const SidebarItem = ({ icon: Icon, label, href, active }) => {
+const SidebarItem = ({ icon: SidebarIcon, label, href, active }) => {
     return (
         <Link
             to={href}
@@ -23,7 +23,7 @@ const SidebarItem = ({ icon: Icon, label, href, active }) => {
                 : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
                 }`}
         >
-            <Icon size={20} />
+            <SidebarIcon size={20} />
             {label}
         </Link>
     );

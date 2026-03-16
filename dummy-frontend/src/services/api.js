@@ -1,4 +1,4 @@
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+const API_BASE = import.meta.env.VITE_API_URL || 'http://127.0.0.1:5000';
 
 /**
  * Get the stored admin JWT token.
@@ -54,6 +54,12 @@ export const api = {
     getDestinations: (page = 1, pageSize = 20) =>
         fetchWithAuth(`/api/admin/destinations?page=${page}&page_size=${pageSize}`),
 
+    createDestination: (data) =>
+        fetchWithAuth('/api/admin/destinations', {
+            method: 'POST',
+            body: JSON.stringify(data),
+        }),
+
     updateDestination: (destId, data) =>
         fetchWithAuth(`/api/admin/destinations/${destId}`, {
             method: 'PUT',
@@ -83,9 +89,33 @@ export const api = {
     getUsers: (page = 1, pageSize = 20) =>
         fetchWithAuth(`/api/admin/users?page=${page}&page_size=${pageSize}`),
 
+    deleteUser: (userId) =>
+        fetchWithAuth(`/api/admin/users/${userId}`, {
+            method: 'DELETE',
+        }),
+
     // ── Trip Management ──────────────────────────────────────
     getTrips: (page = 1, pageSize = 20) =>
         fetchWithAuth(`/api/admin/trips?page=${page}&page_size=${pageSize}`),
+
+    getTrip: (tripId) => fetchWithAuth(`/api/admin/trips/${tripId}`),
+
+    deleteTrip: (tripId) =>
+        fetchWithAuth(`/api/admin/trips/${tripId}`, {
+            method: 'DELETE',
+        }),
+
+    updateEngineConfig: (config) =>
+        fetchWithAuth('/api/ops/engine-config', {
+            method: 'POST',
+            body: JSON.stringify(config),
+        }),
+
+    triggerAgent: (agentKey) =>
+        fetchWithAuth('/api/ops/trigger-agent', {
+            method: 'POST',
+            body: JSON.stringify({ agent_key: agentKey }),
+        }),
 
     // ── SSE Stream ───────────────────────────────────────────
     getLiveMetricsURL: () => `${API_BASE}/api/ops/live-metrics`,

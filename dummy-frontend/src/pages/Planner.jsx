@@ -1,206 +1,237 @@
 import React, { useState } from 'react';
 import {
-    Compass,
     MapPin,
-    Settings2,
+    Calendar,
+    Briefcase,
+    Globe,
     Sparkles,
     AlertCircle,
-    Calendar,
-    Wallet,
-    Users as UsersIcon
+    RefreshCw,
+    Send,
+    DollarSign,
+    Clock,
+    Database
 } from 'lucide-react';
+import { api } from '../services/api';
 
-async function waitForItinerary(apiBase, jobId) {
-    for (let attempt = 0; attempt < 30; attempt += 1) {
-        const response = await fetch(`${apiBase}/get-itinerary-status/${jobId}`);
-        const payload = await response.json();
-
-        if (!response.ok) throw new Error(payload.error || 'Failed to fetch itinerary status');
-        if (payload.status === 'completed') return payload.result;
-        if (payload.status === 'failed') throw new Error(payload.error || 'Itinerary generation failed');
-
-        await new Promise((resolve) => window.setTimeout(resolve, 1000));
-    }
-    throw new Error('Itinerary generation timed out');
-}
-
-const PlannerApp = () => {
-    const [loading, setLoading] = useState(false);
-    const [itinerary, setItinerary] = useState(null);
+const Planner = () => {
+    const [formData, setFormData] = useState({
+        destination: '',
+        budget: 2000,
+        duration: 7,
+        travelers: 1,
+        style: 'balanced'
+    });
+    const [generating, setGenerating] = useState(false);
+    const [status, setStatus] = useState(null);
     const [error, setError] = useState(null);
-    const [city, setCity] = useState('Jaipur');
-    const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+    const [result, setResult] = useState(null);
 
-    const generateItinerary = async () => {
-        setLoading(true);
+    const handleGenerate = async (e) => {
+        e.preventDefault();
+        if (!formData.destination) return;
+
+        setGenerating(true);
         setError(null);
-        setItinerary(null);
-
-        const payload = {
-            destination_country: 'India',
-            start_city: city,
-            selected_destinations: [{ id: 1, name: city, estimated_cost_per_day: 3000 }],
-            budget: 15000,
-            duration: 3,
-            travelers: 2,
-            style: 'luxury',
-            traveler_type: 'couple',
-            use_engine: true
-        };
+        setResult(null);
+        setStatus("Initializing core engine...");
 
         try {
-            const response = await fetch(`${apiBase}/generate-itinerary`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-
-            const data = await response.json();
-            if (!response.ok) throw new Error(data.error || 'Failed to queue itinerary');
-
-            const result = await waitForItinerary(apiBase, data.job_id);
-            setItinerary(result);
+            const data = await api.generateItinerary(
+                formData.destination,
+                formData.budget,
+                formData.duration,
+                formData.travelers
+            );
+            pollStatus(data.job_id);
         } catch (err) {
             setError(err.message);
-        } finally {
-            setLoading(false);
+            setGenerating(false);
         }
     };
 
+    const pollStatus = async (id) => {
+        const interval = setInterval(async () => {
+            try {
+                const data = await api.getItineraryStatus(id);
+                setStatus(data.status);
+
+                if (data.status === 'completed') {
+                    setResult(data.result);
+                    setGenerating(false);
+                    clearInterval(interval);
+                } else if (data.status === 'failed') {
+                    setError(data.error || "Generation failed at the reasoning layer.");
+                    setGenerating(false);
+                    clearInterval(interval);
+                }
+            } catch (err) {
+                console.error("Polling error:", err);
+            }
+        }, 2000);
+    };
+
     return (
-        <div className="space-y-8 max-w-7xl mx-auto w-full">
-            <div className="bg-white rounded-3xl p-8 border border-slate-100 shadow-xl relative overflow-hidden">
-                <div className="absolute top-0 right-0 w-64 h-64 bg-green-500/5 blur-3xl -mr-32 -mt-32"></div>
+        <div className="max-w-6xl mx-auto space-y-12 animate-fade-in">
+            <div className="text-center space-y-4">
+                <h1 className="text-5xl font-black text-slate-900 tracking-tight leading-tight">
+                    Autonomous <span className="text-green-500">Trip Architect</span>
+                </h1>
+                <p className="text-lg text-slate-500 font-medium max-w-2xl mx-auto">
+                    Configure your constraints and let the intelligence engine weave a perfect itinerary using global attraction signals.
+                </p>
+            </div>
 
-                <div className="relative z-10 flex flex-col md:flex-row gap-8 items-start justify-between">
-                    <div className="space-y-4 flex-1">
-                        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-green-500/10 text-green-500 text-[10px] font-extrabold uppercase">
-                            <Sparkles size={12} /> AI-Powered Discovery
-                        </div>
-                        <h1 className="text-4xl font-extrabold text-slate-900 leading-tight tracking-tight">
-                            Where will your <span className="text-green-500 italic font-black">next adventure</span> begin?
-                        </h1>
-                        <p className="text-slate-500 max-w-md font-medium">
-                            Select a gateway and let our neural engine curate a pixel-perfect itinerary for your style.
-                        </p>
-                    </div>
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
+                {/* Configuration Panel */}
+                <div className="lg:col-span-1 space-y-8">
+                    <form onSubmit={handleGenerate} className="bg-white rounded-[2.5rem] border border-slate-100 shadow-2xl p-8 space-y-8">
+                        <div className="space-y-6">
+                            <div className="space-y-2">
+                                <label className="text-xs font-black text-slate-400 uppercase tracking-widest ml-1">Destination Target</label>
+                                <div className="relative group">
+                                    <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-green-500 transition-colors" size={20} />
+                                    <input
+                                        type="text"
+                                        placeholder="Where to explore?"
+                                        className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold text-slate-900 outline-none focus:ring-4 focus:ring-green-500/10 focus:border-green-500 transition-all placeholder:text-slate-300"
+                                        value={formData.destination}
+                                        onChange={(e) => setFormData({ ...formData, destination: e.target.value })}
+                                    />
+                                </div>
+                            </div>
 
-                    <div className="w-full md:w-80 space-y-4 shrink-0">
-                        <div className="space-y-1.5">
-                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">STARTING CITY</label>
-                            <div className="relative">
-                                <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                                <select
-                                    value={city}
-                                    onChange={(e) => setCity(e.target.value)}
-                                    className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-semibold focus:ring-2 focus:ring-green-500 outline-none"
-                                >
-                                    <option value="Jaipur">Jaipur (Culture)</option>
-                                    <option value="Goa">Goa (Coastal)</option>
-                                    <option value="Mumbai">Mumbai (Metro)</option>
-                                </select>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                    <label className="text-xs font-black text-slate-400 uppercase tracking-widest ml-1">Total Budget</label>
+                                    <div className="relative">
+                                        <DollarSign className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                                        <input
+                                            type="number"
+                                            className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-100 rounded-xl font-bold text-slate-900 outline-none focus:border-green-500"
+                                            value={formData.budget}
+                                            onChange={(e) => setFormData({ ...formData, budget: parseInt(e.target.value) })}
+                                        />
+                                    </div>
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-xs font-black text-slate-400 uppercase tracking-widest ml-1">Duration (Days)</label>
+                                    <div className="relative">
+                                        <Clock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                                        <input
+                                            type="number"
+                                            className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-100 rounded-xl font-bold text-slate-900 outline-none focus:border-green-500"
+                                            value={formData.duration}
+                                            onChange={(e) => setFormData({ ...formData, duration: parseInt(e.target.value) })}
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="space-y-3">
+                                <label className="text-xs font-black text-slate-400 uppercase tracking-widest ml-1">Experience Style</label>
+                                <div className="grid grid-cols-2 gap-2">
+                                    {['balanced', 'adventure', 'luxury', 'culture'].map((style) => (
+                                        <button
+                                            key={style}
+                                            type="button"
+                                            onClick={() => setFormData({ ...formData, style })}
+                                            className={`py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all border ${formData.style === style
+                                                    ? 'bg-green-500 text-white border-green-500 shadow-lg shadow-green-500/20'
+                                                    : 'bg-white text-slate-500 border-slate-100 hover:border-slate-200'
+                                                }`}
+                                        >
+                                            {style}
+                                        </button>
+                                    ))}
+                                </div>
                             </div>
                         </div>
 
                         <button
-                            onClick={generateItinerary}
-                            disabled={loading}
-                            className={`w-full py-4 rounded-2xl font-extrabold text-sm tracking-widest uppercase transition-all flex items-center justify-center gap-3 ${loading
-                                ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                                : 'bg-green-500 hover:bg-green-600 text-white shadow-lg shadow-green-500/20 active:scale-[0.98]'
-                                }`}
+                            type="submit"
+                            disabled={generating || !formData.destination}
+                            className="w-full py-5 bg-slate-900 text-white rounded-[1.5rem] font-black text-sm uppercase tracking-[0.2em] shadow-xl hover:bg-slate-800 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-3"
                         >
-                            {loading ? <div className="size-4 border-2 border-slate-300 border-t-slate-500 rounded-full animate-spin"></div> : <Compass size={18} />}
-                            {loading ? 'CONSULTING ENGINE...' : 'GENERATE TRIP'}
+                            {generating ? <RefreshCw className="animate-spin" size={20} /> : <Sparkles size={20} className="text-green-500" />}
+                            {generating ? 'Architecting...' : 'Build Itinerary'}
                         </button>
-                    </div>
+                    </form>
+
+                    {generating && (
+                        <div className="bg-green-50 border border-green-200 rounded-3xl p-6 space-y-4 animate-pulse">
+                            <div className="flex items-center gap-3">
+                                <div className="size-8 bg-green-500 text-white rounded-lg flex items-center justify-center font-black text-xs">AI</div>
+                                <h4 className="font-bold text-green-800 uppercase text-xs tracking-widest">Pipeline Active</h4>
+                            </div>
+                            <p className="text-sm font-bold text-green-700 capitalize">{status?.replace('_', ' ')}...</p>
+                            <div className="w-full bg-green-200 h-1.5 rounded-full overflow-hidden">
+                                <div className="bg-green-600 h-full w-1/3 animate-progress" />
+                            </div>
+                        </div>
+                    )}
+
+                    {error && (
+                        <div className="bg-red-50 border border-red-200 rounded-3xl p-6 flex gap-4">
+                            <AlertCircle className="text-red-500 shrink-0" size={20} />
+                            <p className="text-sm font-bold text-red-700 leading-relaxed">{error}</p>
+                        </div>
+                    )}
                 </div>
 
-                {error && (
-                    <div className="mt-8 p-4 bg-red-500/10 border border-red-500/20 rounded-xl flex items-center gap-3 text-red-500">
-                        <AlertCircle size={20} />
-                        <span className="text-sm font-bold">Error: {error}</span>
-                    </div>
-                )}
-            </div>
-
-            {itinerary && (
-                <div className="space-y-10 animate-fade-in">
-                    <div className="flex flex-col md:flex-row gap-6 items-end justify-between">
-                        <div>
-                            <h2 className="text-4xl font-black text-slate-900 lowercase tracking-tighter">
-                                {itinerary.trip_title}
-                            </h2>
-                            <div className="flex gap-4 mt-4">
-                                <div className="flex items-center gap-1.5 text-xs font-bold text-slate-600 bg-white px-3 py-1.5 rounded-full border border-slate-200 shadow-sm">
-                                    <Wallet className="text-green-500" size={14} /> Est. Rs.{itinerary.total_cost}
-                                </div>
-                                <div className="flex items-center gap-1.5 text-xs font-bold text-slate-600 bg-white px-3 py-1.5 rounded-full border border-slate-200 shadow-sm">
-                                    <Calendar className="text-blue-500" size={14} /> {itinerary.duration} Days
-                                </div>
-                                <div className="flex items-center gap-1.5 text-xs font-bold text-slate-600 bg-white px-3 py-1.5 rounded-full border border-slate-200 shadow-sm">
-                                    <UsersIcon className="text-purple-500" size={14} /> {itinerary.travelers} Persons
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-4 w-full md:w-auto">
-                            <div className="bg-white p-4 rounded-xl border border-slate-200 text-center">
-                                <p className="text-[10px] font-bold text-slate-400 uppercase">Stay</p>
-                                <p className="text-sm font-bold">Rs.{itinerary.cost_breakdown.accommodation}</p>
-                            </div>
-                            <div className="bg-white p-4 rounded-xl border border-slate-200 text-center">
-                                <p className="text-[10px] font-bold text-slate-400 uppercase">Food</p>
-                                <p className="text-sm font-bold">Rs.{itinerary.cost_breakdown.food}</p>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                        {itinerary.itinerary.map((day) => (
-                            <div key={day.day} className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm flex flex-col group transition-all hover:shadow-md">
-                                <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
-                                    <h3 className="text-xl font-extrabold text-slate-900">Day {day.day}</h3>
-                                    <span className="text-[10px] font-extrabold uppercase text-green-600 bg-green-100 px-2.5 py-1 rounded-full">{day.theme}</span>
-                                </div>
-
-                                <div className="p-6 space-y-6 flex-1">
-                                    {day.activities.map((act, aIdx) => (
-                                        <div key={aIdx} className="relative pl-6">
-                                            <div className="absolute left-0 top-1.5 size-2 rounded-full bg-green-500"></div>
-                                            {aIdx !== day.activities.length - 1 && <div className="absolute left-[3px] top-4 w-[2px] h-full bg-slate-100 dark:bg-slate-700"></div>}
-
-                                            <div className="space-y-1">
-                                                <div className="flex justify-between items-start capitalize">
-                                                    <h4 className="text-sm font-bold text-slate-800">{act.activity}</h4>
-                                                    <span className="text-[10px] text-slate-400 font-bold">{act.time}</span>
-                                                </div>
-                                                <p className="text-xs text-slate-500 leading-relaxed font-medium">
-                                                    {act.description}
-                                                </p>
-                                                {act.smart_insight && (
-                                                    <div className="mt-2 text-[10px] bg-slate-50 p-2 rounded italic text-slate-600 border-l-2 border-green-500">
-                                                        "{act.smart_insight}"
-                                                    </div>
-                                                )}
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-
-                                <div className="p-4 bg-slate-50 border-t border-slate-100 mt-auto">
-                                    <div className="flex justify-between items-center text-[10px] font-bold text-slate-400 uppercase">
-                                        <span>Daily Budget</span>
-                                        <span className="text-slate-900">Rs.{day.day_total}</span>
+                {/* Result Display */}
+                <div className="lg:col-span-2 space-y-8">
+                    {result ? (
+                        <div className="bg-white rounded-[3rem] border border-slate-100 shadow-2xl p-10 space-y-10 animate-scale-in">
+                            <div className="flex justify-between items-start">
+                                <div className="space-y-2">
+                                    <h2 className="text-4xl font-black text-slate-900 leading-tight">{result.trip_title}</h2>
+                                    <div className="flex gap-4">
+                                        <span className="flex items-center gap-1.5 text-xs font-black text-green-600 bg-green-50 px-3 py-1 rounded-full uppercase tracking-tighter">
+                                            <Globe size={14} /> {formData.destination}
+                                        </span>
+                                        <span className="flex items-center gap-1.5 text-xs font-black text-blue-600 bg-blue-50 px-3 py-1 rounded-full uppercase tracking-tighter">
+                                            <Calendar size={14} /> {formData.duration} Days
+                                        </span>
                                     </div>
                                 </div>
+                                <button className="p-4 bg-slate-50 text-slate-400 rounded-2xl border border-slate-100 hover:text-slate-600 transition-all">
+                                    <Send size={24} />
+                                </button>
                             </div>
-                        ))}
-                    </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                {result.itinerary?.map((day, idx) => (
+                                    <div key={idx} className="p-6 bg-slate-50 rounded-3xl border border-slate-100 space-y-4 group hover:bg-white hover:shadow-xl transition-all flex flex-col">
+                                        <h3 className="font-black text-slate-400 group-hover:text-green-500 transition-colors uppercase tracking-widest text-[10px]">Day {day.day_number}</h3>
+                                        <p className="font-bold text-slate-800 text-sm leading-relaxed mb-4">{day.description}</p>
+                                        <div className="space-y-2 pt-2 border-t border-slate-200/50">
+                                            {day.activities?.map((act, i) => (
+                                                <div key={i} className="flex items-start gap-2">
+                                                    <div className="size-1 bg-green-500 rounded-full mt-2 shrink-0" />
+                                                    <p className="text-xs text-slate-500 font-medium">{act}</p>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    ) : !generating ? (
+                        <div className="h-full flex flex-col items-center justify-center p-20 border-4 border-dashed border-slate-100 rounded-[4rem] text-center space-y-6">
+                            <div className="size-24 bg-slate-50 rounded-full flex items-center justify-center text-slate-200">
+                                <Briefcase size={48} />
+                            </div>
+                            <div className="space-y-2">
+                                <h3 className="text-2xl font-black text-slate-400">Awaiting Specifications</h3>
+                                <p className="text-sm text-slate-300 font-medium max-w-xs">Fill out the parameters on the left to activate the generation pipeline.</p>
+                            </div>
+                        </div>
+                    ) : null}
                 </div>
-            )}
+            </div>
         </div>
     );
 };
 
-export default PlannerApp;
+export default Planner;

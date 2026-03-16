@@ -16,6 +16,16 @@ dev-backend:
 dev-frontend:
 	cd $(FRONTEND_DIR) && npm run dev
 
+dev-worker:
+	$(PYTHON) -m celery -A backend.celery_config:celery_app worker --loglevel=info --pool=solo
+
+dev-beat:
+	$(PYTHON) -m celery -A backend.celery_config:celery_app beat --loglevel=info
+
+run-all:
+	$(MAKE) dev-infra
+	powershell -Command "Start-Process make dev-backend; Start-Process make dev-frontend; Start-Process make dev-worker; Start-Process make dev-beat"
+
 test:
 	$(PYTHON) -m pytest backend/tests -q
 

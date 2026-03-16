@@ -207,3 +207,42 @@ def list_trips():
         "total": total,
         "total_pages": -(-total // page_size),
     }), 200
+
+@admin_bp.route('/api/admin/trips/<int:trip_id>', methods=['GET'])
+@require_admin
+def get_trip(trip_id):
+    trip = db.session.get(Trip, trip_id)
+    if not trip:
+        return jsonify({"error": "Not found"}), 404
+    return jsonify({
+        "id": trip.id,
+        "trip_title": trip.trip_title,
+        "destination_country": trip.destination_country,
+        "budget": trip.budget,
+        "duration": trip.duration,
+        "travelers": trip.travelers,
+        "itinerary": trip.itinerary_data, # Full JSON
+        "created_at": trip.created_at.isoformat() if trip.created_at else None,
+    }), 200
+
+@admin_bp.route('/api/admin/trips/<int:trip_id>', methods=['DELETE'])
+@require_admin
+def delete_trip(trip_id):
+    trip = db.session.get(Trip, trip_id)
+    if not trip:
+        return jsonify({"error": "Not found"}), 404
+    db.session.delete(trip)
+    db.session.commit()
+    return jsonify({"message": "Trip deleted"}), 200
+
+@admin_bp.route('/api/admin/users/<int:user_id>', methods=['DELETE'])
+@require_admin
+def delete_user(user_id):
+    user = db.session.get(User, user_id)
+    if not user:
+        return jsonify({"error": "Not found"}), 404
+    # Delete associated trips first or let cascade handle it if configured
+    db.session.query(Trip).filter_by(user_id=user_id).delete()
+    db.session.delete(user)
+    db.session.commit()
+    return jsonify({"message": "User and their trips deleted"}), 200

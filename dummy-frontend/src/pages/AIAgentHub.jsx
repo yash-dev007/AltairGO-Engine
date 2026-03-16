@@ -13,7 +13,8 @@ import {
     CheckCircle2,
     XCircle,
     Loader2,
-    Globe
+    Globe,
+    ZapOff
 } from 'lucide-react';
 import { api } from '../services/api';
 
@@ -33,6 +34,7 @@ const AIAgentHub = () => {
     const [ops, setOps] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
+    const [triggering, setTriggering] = useState({});
 
     const fetchData = useCallback(async () => {
         try {
@@ -51,6 +53,19 @@ const AIAgentHub = () => {
         const interval = setInterval(fetchData, 15000);
         return () => clearInterval(interval);
     }, [fetchData]);
+
+    const handleTriggerAgent = async (key) => {
+        setTriggering(prev => ({ ...prev, [key]: true }));
+        try {
+            await api.triggerAgent(key);
+            // Optionally fetch data again to see status change
+            setTimeout(fetchData, 2000);
+        } catch (err) {
+            alert(`Trigger failed for ${key}: ${err.message}`);
+        } finally {
+            setTriggering(prev => ({ ...prev, [key]: false }));
+        }
+    };
 
     const agents = Object.entries(ops?.agents || {}).map(([name, data]) => {
         const meta = AGENT_META[name] || { icon: Bot, desc: 'Agent component' };
@@ -82,80 +97,114 @@ const AIAgentHub = () => {
         return (
             <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
                 <RefreshCw className="text-green-500 animate-spin" size={40} />
-                <p className="text-slate-500 font-medium">Loading agent status...</p>
+                <p className="text-slate-500 font-bold uppercase tracking-widest text-xs">Synchronizing Neural Network...</p>
             </div>
         );
     }
 
     return (
-        <div className="space-y-8 max-w-7xl mx-auto w-full">
+        <div className="space-y-10 animate-fade-in">
             <div className="flex items-center justify-between">
                 <div>
-                    <h2 className="text-3xl font-extrabold text-slate-900 tracking-tight">AI Agent Matrix</h2>
-                    <p className="text-sm text-slate-500 font-medium">Real-time monitoring of autonomous agent coordination.</p>
+                    <h2 className="text-4xl font-black text-slate-900 tracking-tight">AI Agent Matrix</h2>
+                    <p className="text-sm text-slate-500 font-medium">Global orchestration layer for autonomous sub-processes.</p>
                 </div>
-                <div className="flex gap-3">
-                    <div className="bg-white px-4 py-2.5 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-3">
-                        <div className={`size-8 rounded-full flex items-center justify-center ${totalOk === totalAgents ? 'bg-green-100 text-green-600' : 'bg-amber-100 text-amber-600'}`}>
-                            <Activity size={16} />
+                <div className="flex gap-4">
+                    <div className="bg-white px-6 py-3 rounded-[1.5rem] border border-slate-100 shadow-xl shadow-slate-200/50 flex items-center gap-4">
+                        <div className={`size-10 rounded-2xl flex items-center justify-center shadow-inner ${totalOk === totalAgents ? 'bg-green-50 text-green-600' : 'bg-amber-50 text-amber-600'}`}>
+                            <Activity size={20} />
                         </div>
                         <div className="flex flex-col">
-                            <span className="text-[10px] font-bold text-slate-400 uppercase leading-none">Global Health</span>
-                            <span className="text-sm font-bold text-slate-900 uppercase leading-none mt-1">
-                                {totalAgents > 0 ? `${totalOk}/${totalAgents} OK` : 'No Data'}
+                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Fleet Health</span>
+                            <span className="text-lg font-black text-slate-900 leading-none">
+                                {totalAgents > 0 ? `${totalOk}/${totalAgents} ONLINE` : 'INIT...'}
                             </span>
                         </div>
                     </div>
-                    <button onClick={fetchData} className="size-10 flex items-center justify-center rounded-xl bg-white border border-slate-100 shadow-sm hover:bg-slate-50 transition-colors">
-                        <RefreshCw size={16} className="text-slate-500" />
+                    <button onClick={fetchData} className="size-14 flex items-center justify-center rounded-2xl bg-white border border-slate-100 shadow-xl shadow-slate-200/50 hover:bg-slate-50 transition-all active:scale-95">
+                        <RefreshCw size={24} className="text-slate-500" />
                     </button>
                 </div>
             </div>
 
             {error && (
-                <div className="bg-red-50 border border-red-200 p-4 rounded-xl flex items-center gap-3 text-red-700 text-sm">
-                    <XCircle size={18} />
-                    {error}
+                <div className="bg-red-50 border border-red-200 p-6 rounded-[2rem] flex items-center gap-4 text-red-700 font-bold">
+                    <XCircle size={24} />
+                    <p>Matrix Connection Interrupted: {error}</p>
                 </div>
             )}
 
-            {/* Agent Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {/* Agent Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
                 {agents.map((agent) => (
-                    <div key={agent.key} className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 hover:shadow-md transition-shadow group">
-                        <div className="flex justify-between items-start mb-4">
-                            <div className={`size-12 rounded-xl flex items-center justify-center ${agent.isOk ? 'bg-green-100 text-green-600' : agent.status === 'idle' ? 'bg-slate-100 text-slate-400' : 'bg-amber-100 text-amber-600'}`}>
-                                <agent.icon size={24} />
+                    <div key={agent.key} className="bg-white rounded-[2.5rem] shadow-xl shadow-slate-200/40 border border-slate-100 p-8 hover:shadow-2xl hover:-translate-y-1 transition-all group overflow-hidden relative">
+                        {/* Background Decor */}
+                        <div className={`absolute -right-4 -top-4 size-32 opacity-[0.03] group-hover:opacity-[0.08] transition-opacity ${agent.isOk ? 'text-green-500' : 'text-amber-500'}`}>
+                            <agent.icon size={128} />
+                        </div>
+
+                        <div className="flex justify-between items-start mb-6 relative z-10">
+                            <div className={`size-16 rounded-[1.5rem] flex items-center justify-center shadow-lg ${agent.isOk ? 'bg-green-500 text-white shadow-green-500/20' : agent.status === 'idle' ? 'bg-slate-100 text-slate-400 shadow-none' : 'bg-amber-500 text-white shadow-amber-500/20'}`}>
+                                <agent.icon size={32} />
                             </div>
                             <div className="flex flex-col items-end">
-                                <span className="text-[10px] font-bold text-slate-400">{agent.lastRun}</span>
-                                <span className={`px-2 py-0.5 text-[10px] font-bold rounded mt-1 uppercase ${agent.isOk ? 'bg-green-100 text-green-700' : agent.status === 'idle' ? 'bg-slate-100 text-slate-500' : 'bg-amber-100 text-amber-700'}`}>
+                                <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest mb-1">{agent.lastRun}</span>
+                                <span className={`px-3 py-1 text-[10px] font-black rounded-lg uppercase tracking-tighter ${agent.isOk ? 'bg-green-100 text-green-700' : agent.status === 'idle' ? 'bg-slate-100 text-slate-500' : 'bg-amber-100 text-amber-700'}`}>
                                     {agent.status}
                                 </span>
                             </div>
                         </div>
-                        <h4 className="font-bold text-slate-900 mb-2">{agent.name}</h4>
-                        <p className="text-xs text-slate-500 mb-4 leading-relaxed font-medium">{agent.description}</p>
+
+                        <div className="relative z-10 space-y-2 mb-8">
+                            <h4 className="text-xl font-black text-slate-900 leading-tight">{agent.name}</h4>
+                            <p className="text-xs text-slate-500 leading-relaxed font-bold">{agent.description}</p>
+                        </div>
+
+                        <div className="relative z-10 flex gap-4 pt-6 border-t border-slate-50">
+                            <button
+                                onClick={() => handleTriggerAgent(agent.key)}
+                                disabled={triggering[agent.key]}
+                                className="flex-1 py-3 bg-slate-900 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-slate-900/20 hover:bg-slate-800 transition-all flex items-center justify-center gap-2 active:scale-95 disabled:opacity-50"
+                            >
+                                {triggering[agent.key] ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} fill="currentColor" />}
+                                {triggering[agent.key] ? 'TRIGGERING...' : 'TRIGGER AGENT'}
+                            </button>
+                            <button className="p-3 bg-slate-50 text-slate-400 rounded-2xl border border-slate-100 hover:text-slate-600 transition-all">
+                                <Settings2 size={18} />
+                            </button>
+                        </div>
                     </div>
                 ))}
             </div>
 
-            {/* Celery Tasks */}
+            {/* System Engine Health */}
             {celeryTasks.length > 0 && (
-                <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
-                    <h3 className="font-bold text-slate-900 flex items-center gap-2 mb-4 text-sm">
-                        <Settings2 className="text-green-500" size={18} /> Celery Task Status
-                    </h3>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                        {celeryTasks.map((task) => (
-                            <div key={task.name} className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-                                <div className="flex items-center justify-between mb-1">
-                                    <span className="text-xs font-bold text-slate-700 truncate">{task.name}</span>
-                                    {task.isOk ? <CheckCircle2 size={14} className="text-green-500" /> : <XCircle size={14} className="text-slate-300" />}
-                                </div>
-                                <p className="text-[10px] text-slate-400">{task.lastRun}</p>
+                <div className="bg-slate-950 rounded-[3rem] shadow-2xl p-10 relative overflow-hidden group">
+                    <div className="absolute top-0 right-0 w-96 h-96 bg-green-500/10 blur-[120px] -mr-48 -mt-48 transition-all duration-1000 group-hover:bg-green-500/20" />
+
+                    <div className="relative z-10 flex flex-col md:flex-row gap-10 items-start justify-between">
+                        <div className="space-y-4">
+                            <div className="inline-flex items-center gap-2 px-3 py-1 bg-green-500 text-white rounded-full text-[10px] font-black uppercase tracking-widest">
+                                <Cpu size={12} /> System Core
                             </div>
-                        ))}
+                            <h3 className="text-3xl font-black text-white">Distributed Pipeline Health</h3>
+                            <p className="text-slate-400 font-medium max-w-sm">Status of background worker threads managing heavy computational geometry and LLM reasoning.</p>
+                        </div>
+
+                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 w-full md:w-auto">
+                            {celeryTasks.map((task) => (
+                                <div key={task.name} className="p-5 bg-white/5 border border-white/10 rounded-[1.5rem] backdrop-blur-md flex flex-col justify-between group/task hover:bg-white/10 transition-all">
+                                    <div className="flex items-center justify-between mb-4">
+                                        <span className="text-[10px] font-black text-white uppercase tracking-widest truncate mr-4">{task.name}</span>
+                                        {task.isOk ? <CheckCircle2 size={16} className="text-green-500" /> : <Activity size={16} className="text-amber-500 animate-pulse" />}
+                                    </div>
+                                    <div className="space-y-1">
+                                        <p className="text-[9px] text-slate-500 font-black uppercase tracking-widest">Last Execution</p>
+                                        <p className="text-xs text-slate-300 font-bold">{task.lastRun}</p>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
                     </div>
                 </div>
             )}
