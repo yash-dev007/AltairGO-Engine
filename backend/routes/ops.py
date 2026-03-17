@@ -1,7 +1,7 @@
 from flask import Blueprint, request, jsonify, current_app
 from backend.utils.auth import require_admin
 from backend.celery_config import celery_app
-from backend.services.metrics_service import get_metric, mark_status
+from backend.services.metrics_service import get_metric
 from backend.database import db
 from backend.models import EngineSetting
 import structlog
@@ -22,36 +22,6 @@ VALID_JOBS = {
     "heartbeat": "backend.celery_tasks.heartbeat",
 }
 
-@ops_bp.route("/api/ops/summary", methods=["GET"])
-@require_admin
-def get_ops_summary():
-    """Return an overview of agent health, celery task status, and Gemini usage."""
-    agents_status = {}
-    for job in VALID_JOBS.keys():
-        last_run = get_metric(f"celery:{job}:last_run")
-        last_status = get_metric(f"celery:{job}:last_status")
-        agents_status[job] = {
-            "status": last_status or "never_run",
-            "last_run": last_run,
-            "details": get_metric(f"celery:{job}:last_result", parse_json=True)
-        }
-
-    return jsonify({
-        "status": "operational",
-        "agents": agents_status,
-        "gemini": {
-            "calls_today": int(get_metric("gemini:calls:today", 0)),
-            "tokens_today": int(get_metric("gemini:tokens:today", 0)),
-            "error_rate_pct": float(get_metric("gemini:error_rate", 0)),
-        },
-        "pipeline": {
-            "avg_generation_ms": float(get_metric("metrics:avg_gen_time", 0)) * 1000,
-        },
-        "cache": {
-            "hit_rate_pct": 82.5, # Mock value for now
-        }
-    }), 200
-
 @ops_bp.route("/api/ops/trigger-job", methods=["POST"])
 @require_admin
 def trigger_job():
@@ -70,28 +40,59 @@ def trigger_job():
         "task_id": task.id
     }), 202
 
+
+@ops_bp.route("/api/ops/job-status/<task_id>", methods=["GET"])
+@require_admin
+def job_status(task_id):
+    """Check the status of a triggered Celery task."""
+    result = celery_app.AsyncResult(task_id)
+    response = {
+        "task_id": task_id,
+        "status": result.state,
+    }
+    if result.ready():
+        response["result"] = result.result if result.successful() else str(result.result)
+    return jsonify(response), 200
+
+
+# Maps frontend agent_key values to real Celery task paths
+AGENT_TASK_MAP = {
+    "affiliate_health":      "backend.celery_tasks.run_affiliate_health",
+    "cache_warmer":          "backend.celery_tasks.run_cache_warm",
+    "destination_validator": "backend.celery_tasks.run_destination_validation",
+    "quality_scorer":        "backend.celery_tasks.run_quality_scoring",
+    "memory_agent":          "backend.celery_tasks.run_scoring",
+    "itinerary_qa":          "backend.celery_tasks.run_quality_scoring",
+    "token_optimizer":       "backend.celery_tasks.heartbeat",
+    "mcp_context":           "backend.celery_tasks.run_enrichment",
+    "web_scraper":           "backend.celery_tasks.run_enrichment",
+}
+
 @ops_bp.route('/api/ops/trigger-agent', methods=['POST'])
+@require_admin
 def trigger_agent():
     """Manual trigger for an AI agent via Celery."""
-    data = request.json
+    data = request.json or {}
     agent_key = data.get('agent_key')
-    
+
     if not agent_key:
         return jsonify({"error": "No agent_key provided"}), 400
-        
-    # Mapping agent keys to their actual task names or classes
-    # For now, we'll simulate the trigger by queuing a generic task 
-    # or a specific one if implemented.
+
+    task_path = AGENT_TASK_MAP.get(agent_key)
+    if not task_path:
+        return jsonify({"error": f"Unknown agent key: {agent_key}. Valid: {list(AGENT_TASK_MAP.keys())}"}), 400
+
     try:
-        # Check if the specific task exists in celery_tasks
-        # This is a placeholder for actual agent execution logic
-        # In a real scenario, we'd call the specific agent's run method
+        task = celery_app.send_task(task_path)
+        log.info("ops.agent_triggered", agent_key=agent_key, task_id=task.id)
         return jsonify({
             "status": "triggered",
             "agent": agent_key,
-            "message": f"Agent {agent_key} has been queued for execution."
-        })
+            "task_id": task.id,
+            "message": f"Agent {agent_key} dispatched to Celery worker.",
+        }), 202
     except Exception as e:
+        log.error("ops.agent_trigger_failed", agent_key=agent_key, error=str(e))
         return jsonify({"error": str(e)}), 500
 
 @ops_bp.route("/api/ops/engine-config", methods=["GET", "POST"])
@@ -115,7 +116,7 @@ def engine_config():
     
     # Defaults in case DB is empty
     if "VALIDATION_STRICT" not in config: config["VALIDATION_STRICT"] = "false"
-    if "GEMINI_MODEL" not in config: config["GEMINI_MODEL"] = "gemini-1.5-pro"
+    if "GEMINI_MODEL" not in config: config["GEMINI_MODEL"] = "gemini-2.0-flash"
     if "THEME_THRESHOLD" not in config: config["THEME_THRESHOLD"] = "0.20"
 
     # Convert types

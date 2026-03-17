@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import {
@@ -7,12 +7,21 @@ import {
     Network,
     Database,
     Settings,
-    Search,
-    Bell,
+    Activity,
     Rocket,
     Compass,
-    LogOut
+    LogOut,
+    Signal,
 } from 'lucide-react';
+
+const PAGE_META = {
+    '/': 'Mission Control',
+    '/planner': 'Autonomous Trip Architect',
+    '/agents': 'AI Agent Matrix',
+    '/network': 'Network & Core Data',
+    '/data': 'Data Laboratory',
+    '/settings': 'Intelligence Config',
+};
 
 const SidebarItem = ({ icon: SidebarIcon, label, href, active }) => {
     return (
@@ -33,6 +42,7 @@ const Layout = ({ children }) => {
     const location = useLocation();
     const currentPath = location.pathname;
     const { logout } = useAuth();
+    const pageTitle = useMemo(() => PAGE_META[currentPath] || 'Mission Control', [currentPath]);
 
     return (
         <div className="flex h-screen overflow-hidden bg-white font-sans">
@@ -114,24 +124,16 @@ const Layout = ({ children }) => {
             <main className="flex-1 flex flex-col min-w-0 overflow-y-auto bg-slate-50">
                 <header className="h-16 shrink-0 border-b border-slate-200 bg-white/80 backdrop-blur sticky top-0 z-10 px-8 flex items-center justify-between">
                     <div className="flex items-center gap-4">
-                        <h2 className="text-lg font-bold text-slate-900">Mission Control Dashboard</h2>
-                        <span className="bg-green-100 text-green-700 text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">
+                        <h2 className="text-lg font-bold text-slate-900">{pageTitle}</h2>
+                        <span className="bg-green-100 text-green-700 text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider flex items-center gap-1">
+                            <Signal size={8} />
                             SYSTEMS ONLINE
                         </span>
                     </div>
 
-                    <div className="flex items-center gap-4">
-                        <div className="relative hidden md:block">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                            <input
-                                className="pl-10 pr-4 py-1.5 bg-slate-100 border-none rounded-full text-sm w-64 focus:ring-2 focus:ring-green-500 transition-all text-slate-900"
-                                placeholder="Global discovery search..."
-                                type="text"
-                            />
-                        </div>
-                        <button className="size-9 flex items-center justify-center rounded-full hover:bg-slate-100 transition-colors text-slate-600">
-                            <Bell size={20} />
-                        </button>
+                    <div className="flex items-center gap-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                        <Activity size={14} className="text-green-500" />
+                        <span>Admin Control Panel</span>
                     </div>
                 </header>
 

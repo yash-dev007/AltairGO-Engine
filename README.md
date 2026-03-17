@@ -1,126 +1,112 @@
 <div align="center">
 
-<img src="https://img.shields.io/badge/AltairGO-Intelligence-22c55e?style=for-the-badge&logo=airplane&logoColor=white" alt="AltairGO Intelligence" />
+<img src="https://img.shields.io/badge/AltairGO-Engine-22c55e?style=for-the-badge&logo=airplane&logoColor=white" alt="AltairGO Engine" />
 
-# ✈️ AltairGO Engine
+# AltairGO Engine
 
-**An AI-powered travel planning backend with a deterministic itinerary pipeline, Redis-backed caching, Celery maintenance jobs, and a premium "Mission Control" real-time ops dashboard.**
+**AI-powered travel itinerary generation platform with a deterministic 5-step pipeline, real-time ops dashboard, Celery job orchestration, and Gemini 2.0 Flash polish.**
 
-[![Python](https://img.shields.io/badge/Python-3.10+-3776AB?style=flat-square&logo=python&logoColor=white)](https://python.org)
-[![Flask](https://img.shields.io/badge/Flask-3.x-000000?style=flat-square&logo=flask&logoColor=white)](https://flask.palletsprojects.com)
-[![React](https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=black)](https://react.dev)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-PostGIS-336791?style=flat-square&logo=postgresql&logoColor=white)](https://postgresql.org)
-[![Redis](https://img.shields.io/badge/Redis-Cache%20%26%20Broker-DC382D?style=flat-square&logo=redis&logoColor=white)](https://redis.io)
-[![Gemini](https://img.shields.io/badge/Google-Gemini%202.0-4285F4?style=flat-square&logo=google&logoColor=white)](https://deepmind.google/technologies/gemini/)
-[![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
+[![Python 3.10+](https://img.shields.io/badge/Python-3.10+-3776AB?style=flat-square&logo=python&logoColor=white)](https://python.org)
+[![Flask 3.x](https://img.shields.io/badge/Flask-3.x-000000?style=flat-square&logo=flask&logoColor=white)](https://flask.palletsprojects.com)
+[![React 19](https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=black)](https://react.dev)
+[![PostgreSQL + PostGIS](https://img.shields.io/badge/PostgreSQL-PostGIS-336791?style=flat-square&logo=postgresql&logoColor=white)](https://postgresql.org)
+[![Redis](https://img.shields.io/badge/Redis-7-DC382D?style=flat-square&logo=redis&logoColor=white)](https://redis.io)
+[![Gemini 2.0](https://img.shields.io/badge/Gemini-2.0%20Flash-4285F4?style=flat-square&logo=google&logoColor=white)](https://deepmind.google/technologies/gemini/)
+[![Tests](https://img.shields.io/badge/Tests-188%20passed-22c55e?style=flat-square)](backend/tests/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
 
 <br/>
 
-[🚀 Quick Start](#-quick-start) • [🏗️ Architecture](#%EF%B8%8F-architecture) • [📡 API Reference](#-api-reference) • [⚙️ Configuration](#%EF%B8%8F-configuration) • [🧪 Testing](#-testing)
+[Quick Start](#-quick-start) &bull; [Architecture](#-architecture) &bull; [Dashboard](#-mission-control-dashboard) &bull; [API Reference](#-api-reference) &bull; [Deployment](#-deployment)
 
 </div>
 
 ---
 
-## 🌟 Overview
+## Overview
 
-AltairGO Engine is the backend powering the **AltairGO Intelligence** travel platform. It generates hyper-personalized, budget-accurate, day-by-day trip itineraries through a five-step deterministic pipeline — and uses Google Gemini only to polish the final output.
+AltairGO Engine generates hyper-personalized, budget-accurate, day-by-day travel itineraries through a **deterministic 5-step pipeline**. AI (Google Gemini 2.0 Flash) is used only to polish the final output — not to decide structure, budget allocation, or routing.
 
-### What sets it apart
+The platform ships with a full **Mission Control** admin dashboard built in React 19 that provides real-time visibility into every backend workflow.
 
-| **Deterministic-first pipeline** | Filter → Cluster → Budget → Route → Assemble, AI only adds polish |
-| **Mission Control UI** | Reimagined premium dashboard with emerald green aesthetic and modular design |
+### Key Differentiators
+
+| Feature | Details |
+|---|---|
+| **Deterministic pipeline** | Filter &rarr; Cluster &rarr; Budget &rarr; Route &rarr; Assemble. AI adds polish, not structure |
+| **Mission Control dashboard** | 6-page admin UI covering every backend endpoint with SSE live metrics |
 | **Post-generation validation** | `ItineraryValidator` auto-corrects budget overruns, generic names, cost inconsistencies |
-| **Real-time ops dashboard** | Server-Sent Events stream pipeline latency, cache hit rate, and agent health |
-| **Supabase Integration** | Transaction-aware database connection logic for high-concurrency safety |
-| **Celery job scheduler** | 10+ background jobs for ingestion, enrichment, scoring, and cache warming |
-| **Geospatial awareness** | H3 cells + PostGIS for intelligent destination clustering |
+| **Real-time streaming** | Server-Sent Events stream pipeline latency, cache hits, and agent health |
+| **Geospatial intelligence** | H3 hexagonal cells + PostGIS for attraction clustering into walkable day plans |
+| **Celery orchestration** | 10+ scheduled jobs for ingestion, enrichment, scoring, and cache warming |
+| **188 passing tests** | Comprehensive test suite covering auth, API contracts, engine, pipeline, and validation |
 
 ---
 
-## 📺 Visuals
-
-### "Mission Control" Dashboard
-![Mission Control Dashboard](https://raw.githubusercontent.com/yash-dev007/AltairGo-Engine/main/docs/screenshots/dashboard.png)
-
-### Itinerary Generation
-![AI Itinerary](https://raw.githubusercontent.com/yash-dev007/AltairGo-Engine/main/docs/screenshots/planner.png)
-
----
-
-## 🏗️ Architecture
+## Architecture
 
 ### System Overview
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                     React 19 Frontend (Vite)                     │
-│              Demo UI  ·  Itinerary Viewer  ·  /ops Dashboard     │
-└────────────────────────────┬────────────────────────────────────┘
-                             │ REST + SSE
-┌────────────────────────────▼────────────────────────────────────┐
-│                        Flask API (8 Blueprints)                  │
-│  auth  ·  trips  ·  destinations  ·  admin  ·  ops  ·  affiliates│
-└──────────┬──────────────────────────────┬───────────────────────┘
-           │                              │
-┌──────────▼──────────┐      ┌────────────▼─────────────┐
-│  Itinerary Pipeline  │      │      Service Layer        │
-│                      │      │                           │
-│  1. FilterEngine     │      │  GeminiService (polish)   │
-│  2. ClusterEngine    │      │  ImageService (5-source)  │
-│  3. BudgetAllocator  │      │  CacheService (Redis)     │
-│  4. RouteOptimizer   │      │  MetricsService (SSE)     │
-│  5. Assembler        │      │  AffiliateService         │
-└──────────┬──────────┘      └────────────┬─────────────┘
-           │                              │
-┌──────────▼──────────────────────────────▼─────────────┐
-│              Data & Infrastructure Layer                │
-│   PostgreSQL + PostGIS  ·  Redis  ·  Celery Beat/Worker│
-└────────────────────────────────────────────────────────┘
++---------------------------------------------------------------+
+|                   React 19 Frontend (Vite)                     |
+|   Dashboard  |  Planner  |  Agents  |  Network  |  Data Lab   |
++-------------------------------+-------------------------------+
+                                | REST + SSE
++-------------------------------v-------------------------------+
+|                    Flask API (8 Blueprints)                    |
+|  auth | trips | destinations | admin | ops | dashboard | signals
++---------------+-------------------------------+---------------+
+                |                               |
++---------------v---------------+  +------------v--------------+
+|     Itinerary Pipeline        |  |      Service Layer         |
+|                               |  |                            |
+|  1. FilterEngine              |  |  GeminiService (polish)    |
+|  2. ClusterEngine (H3)       |  |  CacheService (Redis)      |
+|  3. BudgetAllocator          |  |  MetricsService (SSE)      |
+|  4. RouteOptimizer           |  |  ImageService (5-source)   |
+|  5. Assembler                |  |  AffiliateService          |
++---------------+---------------+  +------------+--------------+
+                |                               |
++---------------v-------------------------------v---------------+
+|               Data & Infrastructure Layer                      |
+|    PostgreSQL + PostGIS  |  Redis  |  Celery Beat + Worker     |
++---------------------------------------------------------------+
 ```
 
 ### The Itinerary Pipeline
 
-The core innovation — AI is used to polish descriptions, not to decide structure:
-
 ```
-User Request
-     │
-     ▼
-┌─────────────┐    Filters by popularity, traveler type,
-│ FilterEngine │◄── seasonality, and budget compatibility
-└──────┬──────┘
-       ▼
-┌──────────────┐   Groups nearby attractions into day
-│ ClusterEngine │◄── buckets using H3 geospatial cells
-└──────┬───────┘
-       ▼
-┌────────────────┐  Allocates budget across transport (20%),
-│ BudgetAllocator │◄── accommodation (35%), food (25%), activities (15%), misc (5%)
-└──────┬─────────┘
-       ▼
-┌───────────────┐   Orders activities into a time-based day
-│ RouteOptimizer │◄── plan with travel time and pacing
-└──────┬────────┘
-       ▼
-┌──────────┐        Builds the frontend-facing itinerary
-│ Assembler │◄────── schema with all metadata
-└──────┬───┘
-       ▼
-┌──────────────┐    Enriches with AI-polished descriptions,
-│ GeminiService │◄── trip title, insights, packing tips
-└──────┬───────┘
-       ▼
-┌────────────────────┐
-│ ItineraryValidator │ Budget ±5% check, quality checks, cost consistency
-└────────────────────┘
-       ▼
-    Response
+User Request (destination, budget, duration, travelers, style, traveler_type)
+     |
+     v
+[FilterEngine]       Filters by popularity, traveler type, seasonality, budget
+     |
+     v
+[ClusterEngine]      Groups nearby attractions into day buckets using H3 cells
+     |
+     v
+[BudgetAllocator]    Distributes: transport 20%, accommodation 35%, food 25%,
+     |                activities 15%, misc 5%
+     v
+[RouteOptimizer]     Orders activities by time with travel pacing
+     |
+     v
+[Assembler]          Builds frontend-facing itinerary JSON with metadata
+     |
+     v
+[GeminiService]      AI-polished descriptions, trip title, insights, packing tips
+     |
+     v
+[ItineraryValidator] Budget +/-5% check, quality assurance, cost consistency
+     |
+     v
+  Response
 ```
 
 ### Background Jobs (Celery Beat)
 
-> All times use `Asia/Kolkata` timezone.
+All times in `Asia/Kolkata` timezone.
 
 | Job | Schedule | Purpose |
 |---|---|---|
@@ -132,46 +118,55 @@ User Request
 | Trip quality scoring | Daily 04:30 | Scores saved trips for quality metrics |
 | Attraction scoring | 1st of month 05:00 | Monthly popularity recalculation |
 | Price sync | Daily 06:00 + 18:00 | Refreshes hotel, flight, activity pricing |
-| Affiliate health check | Every 6 hours | Validates affiliate link integrity |
-| Worker Heartbeat | Every 5 mins | Signals worker availability to Mission Control |
+| Affiliate health check | Every 6 hours | Validates partner booking API health |
+| Worker heartbeat | Every 5 mins | Signals worker availability to dashboard |
 
 ---
 
-## 🔐 Security & Reliability
+## Mission Control Dashboard
 
-- **Hardened Validation**: `VALIDATION_STRICT` environment variable for post-generation sanity checks.
-- **Fail-Safe Metrics**: All Redis/Metrics writes are wrapped in `try-except` to prevent engine crashes during minor cache blips.
-- **JWT Refresh Flow**: Enhanced security with short-lived access tokens (1h) and long-lived refresh tokens (30d).
-- **Rate Limiting**: Applied to sensitive admin and generation endpoints using Redis-backed `Flask-Limiter`.
-- **Gunicorn gevent**: Production-ready concurrency model for handling high-latency AI requests.
+A 6-page admin dashboard built with React 19 + Tailwind CSS that covers **every** backend admin endpoint.
+
+| Page | Route | What It Does |
+|---|---|---|
+| **Dashboard** | `/` | KPI cards, Gemini metrics, cache stats, P95 latency, agent fleet health, pipeline job control with real polling, SSE live activity feed, pending requests banner |
+| **Trip Planner** | `/planner` | Full itinerary generation form with destination, budget, duration, travelers, traveler type, experience style. Async polling with status updates |
+| **AI Agent Matrix** | `/agents` | Agent grid with trigger buttons, dispatch status, fleet health summary, distributed pipeline health panel |
+| **Network Hub** | `/network` | Paginated user management, trip inspection (full JSON viewer), delete operations |
+| **Data Laboratory** | `/data` | Destination CRUD table, destination request review queue with approve/reject workflow |
+| **Intelligence Config** | `/settings` | Engine config tuning: strict validation toggle, theme threshold slider, Gemini model selector |
+
+### Dashboard Features
+- **SSE live metrics** with error-counted auto-close (stops reconnecting after 3 failures)
+- **Real job polling** via `task_id` with progress indicators
+- **Static Tailwind color map** to prevent JIT purging in production builds
+- **Interval cleanup** on all polling components to prevent memory leaks
+- **Client-side routing** with `react-router-dom` throughout (no full page reloads)
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
 
 - Python 3.10+
 - Node.js 18+
-- Docker Desktop (for local PostgreSQL + Redis)
-- A [Google Gemini API key](https://aistudio.google.com/app/apikey) (optional — enables AI polish)
+- Docker Desktop (PostgreSQL + Redis)
+- [Google Gemini API key](https://aistudio.google.com/app/apikey) (optional, enables AI polish)
 
-### 1. Clone & Install Backend
+### 1. Clone & Install
 
 ```bash
-git clone https://github.com/yash-dev007/AltairGo-Intelligence.git
-cd AltairGo-Intelligence
+git clone https://github.com/yash-dev007/AltairGO-Engine.git
+cd AltairGO-Engine
 
-# Create and activate virtual environment
+# Backend
 python -m venv .venv
-
-# Windows
-.venv\Scripts\Activate.ps1
-
-# macOS / Linux
-source .venv/bin/activate
-
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
 pip install -r backend/requirements.txt
+
+# Frontend
+cd dummy-frontend && npm install && cd ..
 ```
 
 ### 2. Start Infrastructure
@@ -180,58 +175,42 @@ pip install -r backend/requirements.txt
 docker compose up -d postgres redis
 ```
 
-This spins up:
-- **PostgreSQL + PostGIS** on `localhost:5432`
-- **Redis** on `localhost:6379`
+This starts **PostgreSQL 15 + PostGIS** on `localhost:5432` and **Redis 7** on `localhost:6379`.
 
 ### 3. Configure Environment
 
 ```bash
 cp .env.example .env
-# Edit .env with your values (see Configuration section)
+```
+
+Edit `.env` with your values:
+
+```env
+DATABASE_URL=postgresql://altairgo:altairgo_dev_pass@localhost:5432/altairgo
+REDIS_URL=redis://localhost:6379/0
+JWT_SECRET_KEY=your-secret-key-minimum-32-characters-long
+ADMIN_ACCESS_KEY=your-admin-portal-key
+GEMINI_API_KEY=your-gemini-api-key        # optional
 ```
 
 ### 4. Run the Backend
 
-**Windows PowerShell:**
-```powershell
-$env:DATABASE_URL="postgresql://altairgo:altairgo_dev_pass@localhost:5432/altairgo"
-$env:REDIS_URL="redis://localhost:6379/0"
-$env:JWT_SECRET_KEY="change-me-in-dev"
-$env:ADMIN_ACCESS_KEY="change-me-in-dev"
-$env:GEMINI_API_KEY="your-gemini-key"
-python -m flask --app backend.app:create_app run --port 5000 --reload
-```
-
-**macOS / Linux:**
 ```bash
-export DATABASE_URL="postgresql://altairgo:altairgo_dev_pass@localhost:5432/altairgo"
-export REDIS_URL="redis://localhost:6379/0"
-export JWT_SECRET_KEY="change-me-in-dev"
-export ADMIN_ACCESS_KEY="change-me-in-dev"
-export GEMINI_API_KEY="your-gemini-key"
 python -m flask --app backend.app:create_app run --port 5000 --reload
 ```
-
-API available at → `http://localhost:5000`
 
 ### 5. Run the Frontend
 
 ```bash
-cd dummy-frontend
-npm install
-npm run dev
+cd dummy-frontend && npm run dev
 ```
 
-Frontend available at → `http://localhost:5173`
-
-- Visit `/` for the itinerary demo (requests trips for Jaipur, Goa, Mumbai)
-- Visit `/ops` for the real-time operations dashboard
+Open `http://localhost:5173` and login with your admin key.
 
 ### 6. Run Celery Workers (Optional)
 
 ```bash
-# Worker (processes jobs)
+# Worker (processes background jobs)
 celery -A backend.celery_config:celery_app worker --loglevel=info
 
 # Beat (triggers scheduled jobs)
@@ -241,116 +220,131 @@ celery -A backend.celery_config:celery_app beat --loglevel=info
 ### Makefile Shortcuts
 
 ```bash
-make dev-infra      # Start Docker services
+make dev            # Start Docker + Flask backend
+make dev-infra      # Start PostgreSQL + Redis only
+make dev-backend    # Flask dev server on port 5000
+make dev-frontend   # Vite dev server on port 5173
+make dev-worker     # Celery worker
+make dev-beat       # Celery beat scheduler
+make run-all        # Start everything in parallel
 make test           # Run pytest suite
-make lint           # Run ESLint + flake8
-make build-frontend # Build Vite production bundle
-make clean          # Remove build artifacts
+make build-frontend # Production frontend build
+make clean          # Stop Docker containers
 ```
-
-> ⚠️ **Note:** `docker/postgres/init.sql` only enables PostGIS. It does **not** seed destinations. The `/generate-itinerary` endpoint requires existing data — see [Populating the Database](#populating-the-database) below.
 
 ---
 
-## 📁 Project Structure
+## Project Structure
 
 ```
-AltairGo-Intelligence/
+AltairGO-Engine/
 ├── backend/
-│   ├── app.py                      # Flask app factory, 8 blueprints, JWT, CORS
-│   ├── celery_config.py            # Celery app + scheduled task registry
-│   ├── database.py                 # SQLAlchemy engine, session, init_db()
-│   ├── agents/                     # Optional AI helper agents
-│   │   ├── memory_agent.py         # Conversation memory
-│   │   ├── live_context_agent.py   # Real-time destination context
-│   │   ├── token_optimizer.py      # Prompt token management
-│   │   ├── itinerary_qa_agent.py   # Post-generation quality checks
-│   │   ├── scraper_agent.py        # Web scraping for enrichment
-│   │   └── destination_validator.py# AI destination validation
-│   ├── engine/                     # Deterministic itinerary pipeline
-│   │   ├── filter_engine.py        # Popularity + compatibility filtering
-│   │   ├── cluster_engine.py       # H3 geospatial day clustering
-│   │   ├── budget_allocator.py     # Budget distribution logic
-│   │   ├── route_optimizer.py      # Time-based activity ordering
-│   │   └── assembler.py            # Frontend schema builder
+│   ├── app.py                     # Flask factory, 8 blueprints, JWT, CORS, /health
+│   ├── celery_config.py           # Celery app + beat schedule registry
+│   ├── celery_tasks.py            # All Celery task definitions
+│   ├── database.py                # SQLAlchemy engine + configure_database()
+│   ├── extensions.py              # Rate limiter (Redis-backed)
+│   ├── models.py                  # 18 SQLAlchemy models
+│   ├── schemas.py                 # Marshmallow validation schemas
+│   ├── utils/auth.py              # @require_admin decorator, JWT helpers
+│   │
+│   ├── engine/                    # Deterministic itinerary pipeline
+│   │   ├── orchestrator.py        # TripGenerationOrchestrator.generate()
+│   │   ├── filter_engine.py       # Popularity + compatibility filtering
+│   │   ├── cluster_engine.py      # H3 geospatial day clustering
+│   │   ├── budget_allocator.py    # Budget distribution logic
+│   │   ├── route_optimizer.py     # Time-based activity ordering
+│   │   └── assembler.py           # Frontend schema builder
+│   │
 │   ├── routes/
-│   │   ├── auth.py                 # Register, Login, Me (JWT)
-│   │   ├── trips.py                # Itinerary generation + CRUD
-│   │   ├── destinations.py         # Countries, destinations, requests
-│   │   ├── admin.py                # Admin CRUD + analytics
-│   │   ├── ops.py                  # /ops/summary + /ops/live-metrics (SSE)
-│   │   └── affiliates.py           # Booking redirect + revenue stats
+│   │   ├── auth.py                # Register, login, refresh, /me
+│   │   ├── trips.py               # Itinerary generation + save/get
+│   │   ├── destinations.py        # Countries, destinations, budget calc
+│   │   ├── signals.py             # Attraction engagement signals
+│   │   ├── admin.py               # Admin CRUD (users, trips, destinations, requests)
+│   │   ├── ops.py                 # Job triggers, engine config, agent triggers
+│   │   └── dashboard.py           # /api/ops/summary, SSE live-metrics
+│   │
 │   ├── services/
-│   │   ├── gemini_service.py       # Gemini API integration (polish + chat)
-│   │   ├── image_service.py        # 5-source image pipeline
-│   │   ├── cache_service.py        # Redis cache wrapper + TTL management
-│   │   ├── metrics_service.py      # Pipeline metrics + SSE streaming
-│   │   └── affiliate_service.py    # URL builder, click tracker, revenue calc
-│   ├── scripts/
-│   │   ├── ingest_osm_data.py      # Overpass API → POI upsert
-│   │   ├── enrich_attractions.py   # Wikidata + Wikipedia + Google Places
-│   │   ├── score_attractions.py    # Popularity + seasonal scoring
-│   │   └── sync_prices.py          # Hotel, flight, activity price seeding
-│   ├── tasks/                      # Celery task implementations
-│   └── tests/                      # pytest suite
-│       ├── conftest.py             # SQLite in-memory test fixtures
-│       ├── test_auth.py
-│       ├── test_api.py
-│       ├── test_engine.py
-│       ├── test_pipeline.py
-│       └── test_validation.py
+│   │   ├── gemini_service.py      # Gemini 2.0 Flash + lite fallback + 3 retries
+│   │   ├── cache_service.py       # Redis cache wrapper
+│   │   ├── metrics_service.py     # Pipeline metrics + SSE streaming
+│   │   └── image_service.py       # Multi-source image pipeline
+│   │
+│   ├── agents/                    # AI helper agents (memory, QA, scraper, etc.)
+│   ├── scripts/                   # Data pipeline scripts (OSM, enrichment, scoring)
+│   └── tests/                     # 188 passing tests
+│       ├── conftest.py            # SQLite in-memory fixtures, admin JWT
+│       ├── test_auth.py           # Registration, login, JWT flows
+│       ├── test_api.py            # Endpoint contracts + status codes
+│       ├── test_engine.py         # Pipeline step unit tests
+│       ├── test_pipeline.py       # Price sync, scoring, enrichment
+│       ├── test_trips.py          # Itinerary generation + save/get
+│       ├── test_signals.py        # Attraction signal recording
+│       └── test_validation.py     # ItineraryValidator edge cases
 │
-├── dummy-frontend/                 # Vite/React demo + ops UI
-│   ├── src/
-│   │   ├── App.jsx                 # Router (demo + /ops routes)
-│   │   ├── pages/ItineraryDemo.jsx # Trip planning demo
-│   │   └── pages/OpsDashboard.jsx  # Real-time metrics viewer
-│   └── vite.config.js
+├── dummy-frontend/                # React 19 + Vite admin dashboard
+│   └── src/
+│       ├── App.jsx                # Router + auth gate
+│       ├── App.css                # Animations + custom scrollbar
+│       ├── contexts/AuthContext.jsx
+│       ├── components/Layout.jsx  # Sidebar + header with route-aware titles
+│       ├── services/api.js        # Authenticated fetch wrapper, all API methods
+│       └── pages/
+│           ├── Dashboard.jsx      # Mission Control (KPIs, jobs, SSE feed)
+│           ├── Planner.jsx        # Trip generation form + async polling
+│           ├── AIAgentHub.jsx     # Agent fleet management + triggers
+│           ├── NetworkHub.jsx     # User + trip management
+│           ├── DataLaboratory.jsx # Destination CRUD + request review
+│           └── IntelligenceHub.jsx# Engine config tuning
 │
-├── docker/
-│   └── postgres/init.sql           # PostGIS extension setup (no seed data)
-├── docs/                           # Strategy and technical notes
-├── docker-compose.yml
-├── Dockerfile                      # Gunicorn on port 5000
-├── railway.toml                    # Railway deployment config
-└── vercel.json                     # Frontend SPA rewrites
+├── docker-compose.yml             # Full stack: Postgres, Redis, Flask, Celery
+├── Dockerfile                     # Python 3.11-slim, Gunicorn, non-root user
+├── railway.toml                   # Railway deployment config
+├── Makefile                       # Dev shortcuts
+└── .env.example                   # Environment template
 ```
 
 ---
 
-## 📡 API Reference
+## API Reference
 
-### Health
+### Health Check
 
 ```
-GET /health
+GET /health    # Returns DB + Redis connectivity status
 ```
 
-### Auth
+### Authentication
 
 | Method | Endpoint | Auth | Description |
 |---|---|---|---|
-| POST | `/auth/register` | — | Create a new user account |
-| POST | `/auth/login` | — | Login and receive JWT token |
-| GET | `/auth/me` | JWT | Get current user profile |
+| `POST` | `/auth/register` | &mdash; | Create user account |
+| `POST` | `/auth/login` | &mdash; | Login, returns access + refresh tokens |
+| `POST` | `/auth/refresh` | Refresh JWT | Refresh access token |
+| `GET` | `/auth/me` | JWT | Current user profile |
 
 ### Trip Planning
 
 | Method | Endpoint | Auth | Description |
 |---|---|---|---|
-| POST | `/generate-itinerary` | Optional | Run the full 5-step pipeline |
-| POST | `/api/save-trip` | JWT | Persist trip to user account |
-| GET | `/get-trip/<trip_id>` | — | Retrieve a saved trip |
-| GET | `/api/user/trips` | JWT | List all user trips |
+| `POST` | `/generate-itinerary` | Optional | Triggers async itinerary generation |
+| `GET` | `/get-itinerary-status/<job_id>` | &mdash; | Poll for generation completion |
+| `POST` | `/api/save-trip` | JWT | Save itinerary to user account |
+| `GET` | `/get-trip/<trip_id>` | JWT | Retrieve saved trip (owner only) |
+| `GET` | `/api/user/trips` | JWT | List user's saved trips |
 
-**Sample `/generate-itinerary` request:**
+**Sample request:**
+
 ```json
 {
-  "destination": "Jaipur",
+  "destination_country": "India",
+  "selected_destinations": [{ "name": "Jaipur" }],
+  "start_city": "Jaipur",
   "budget": 15000,
   "duration": 3,
   "travelers": 2,
-  "style": "standard",
+  "style": "balanced",
   "traveler_type": "couple"
 }
 ```
@@ -359,99 +353,73 @@ GET /health
 
 | Method | Endpoint | Auth | Description |
 |---|---|---|---|
-| GET | `/countries` | — | List all countries |
-| GET | `/destinations` | — | Browse/filter destinations |
-| GET | `/destinations/<id>` | — | Destination details + attractions |
-| POST | `/calculate-budget` | — | Estimate trip budget |
-| POST | `/api/destination-request` | — | Submit a new destination suggestion |
+| `GET` | `/countries` | &mdash; | List all countries |
+| `GET` | `/destinations` | &mdash; | Browse/filter destinations (paginated) |
+| `GET` | `/destinations/<id>` | &mdash; | Destination detail + attractions |
+| `POST` | `/calculate-budget` | &mdash; | Estimate trip budget |
+| `POST` | `/api/destination-request` | &mdash; | Submit destination suggestion |
 
-### Signals & Analytics
+### Signals
 
 | Method | Endpoint | Auth | Description |
 |---|---|---|---|
-| POST | `/api/attraction-signal` | — | Log user engagement with an attraction |
+| `POST` | `/api/attraction-signal` | Optional | Log engagement (view, save, swap, book_click) |
 
-### Admin
-
-> All admin routes require `X-Admin-Key` header.
+### Admin (JWT Required)
 
 | Method | Endpoint | Description |
 |---|---|---|
-| POST | `/api/admin/verify-key` | Verify admin access |
-| GET | `/api/admin/stats` | Dashboard overview stats |
-| GET/PUT/DELETE | `/api/admin/destinations/<id>` | Full destination CRUD |
-| GET | `/api/admin/users` | User list |
-| GET | `/api/admin/trips` | All generated trips |
-| GET | `/api/admin/requests` | Destination submission queue |
-| POST | `/api/admin/requests/<id>/approve` | Approve and create destination |
-| POST | `/api/admin/requests/<id>/reject` | Reject a submission |
+| `POST` | `/api/admin/verify-key` | Verify admin key, returns JWT |
+| `GET` | `/api/admin/stats` | Total users, trips, destinations, attractions |
+| `GET/POST` | `/api/admin/destinations` | List + create destinations |
+| `PUT/DELETE` | `/api/admin/destinations/<id>` | Update + delete destination |
+| `GET` | `/api/admin/users` | Paginated user list |
+| `DELETE` | `/api/admin/users/<id>` | Delete user + all their data |
+| `GET` | `/api/admin/requests` | Destination request queue |
+| `POST` | `/api/admin/requests/<id>/approve` | Approve + create destination |
+| `POST` | `/api/admin/requests/<id>/reject` | Reject request |
+| `GET` | `/api/admin/trips` | All generated trips |
+| `GET/DELETE` | `/api/admin/trips/<id>` | Get/delete specific trip |
 
-### Operations
-
-> Requires `X-Admin-Key` header.
+### Operations (JWT Required)
 
 | Method | Endpoint | Description |
 |---|---|---|
-| POST | `/api/ops/trigger-job` | Manually trigger background pipeline stages |
-| GET | `/api/ops/job-status/:name` | Check execution history of background tasks |
-| GET | `/api/ops/engine-config` | View core engine settings and environment status |
-| GET | `/api/ops/summary` | Snapshot of pipeline health + metrics |
-| GET | `/api/ops/live-metrics` | **SSE stream** — real-time latency, cache hits, agent health |
+| `GET` | `/api/ops/summary` | Full system health snapshot |
+| `GET` | `/api/ops/live-metrics` | SSE stream (token via query param) |
+| `POST` | `/api/ops/trigger-job` | Trigger background job by name |
+| `GET` | `/api/ops/job-status/<task_id>` | Check Celery task status |
+| `POST` | `/api/ops/trigger-agent` | Manually trigger an AI agent |
+| `GET/POST` | `/api/ops/engine-config` | Read/update engine configuration |
 
 ---
 
-## 🗺️ Data Architecture
-
-The engine uses a relational schema designed for geospatial travel data, with a focus on personalization and real-time operational feedback.
-
-### Core Entities
-- **Trips**: Stores generated itineraries, audit metadata, and quality scoring.
-- **User Profiles**: Tracks travel preferences (budget, pace, interests), history, and AI scoring weights.
-- **Destinations & Attractions**: Rich geospatial data enriched with H3 indexing, best visit times, and popularity scores.
-- **Async Jobs**: Manages long-running AI generation and background pipeline tasks.
-
-### Supporting Infrastructure
-- **Feedback**: Collects user qualitative metrics.
-- **Analytics**: Tracks system usage patterns (`analytics_event`) for engine optimization.
-- **Geodata**: Reference data for countries, places, and hotel pricing.
-
----
-
-## ⚙️ Configuration
+## Configuration
 
 ### Environment Variables
 
-| Variable | Required | Purpose |
+| Variable | Required | Description |
 |---|---|---|
-| `DATABASE_URL` | ✅ | Supabase connection (use port `6543` for Transaction Mode) |
-| `REDIS_URL` | ✅ | Redis URI for cache and Celery broker |
-| `JWT_SECRET_KEY` | ✅ | Secret for signing JWT tokens |
-| `ADMIN_ACCESS_KEY` | ✅ | Key for `/api/admin/*` and `/api/ops/*` |
-| `GEMINI_API_KEY` | ⚠️ Optional | Enables itinerary polish and AI chat |
-| `VALIDATION_STRICT` | ⚠️ Optional | Enables stricter itinerary validation |
-| `VITE_API_URL` | Frontend | Backend base URL (default: `http://localhost:5000/api`) |
-
-### Example `.env`
-
-```env
-DATABASE_URL=postgresql://user:pass@aws-region.pooler.supabase.com:6543/postgres
-REDIS_URL=redis://localhost:6379/0
-JWT_SECRET_KEY=your-super-secret-key
-ADMIN_ACCESS_KEY=your-admin-key
-GEMINI_API_KEY=your-gemini-api-key
-```
+| `DATABASE_URL` | Yes | PostgreSQL connection string |
+| `REDIS_URL` | Yes | Redis broker URL |
+| `JWT_SECRET_KEY` | Yes | Minimum 32 chars for signing JWTs |
+| `ADMIN_ACCESS_KEY` | Yes | Admin portal authentication key |
+| `GEMINI_API_KEY` | Optional | Enables AI polish on itineraries |
+| `VALIDATION_STRICT` | Optional | Enables stricter post-generation validation |
+| `ALLOWED_ORIGINS` | Optional | CORS whitelist (default: localhost + altairgo.in) |
+| `PEXELS_API_KEY` | Optional | Image source integration |
 
 ---
 
-## 🗃️ Populating the Database
+## Database
 
-The database initializes with PostGIS extensions only. You need to run data pipeline scripts before the itinerary endpoints work:
+### Populating Data
+
+The database initializes with PostGIS extensions only. Run the data pipeline to seed destinations:
 
 ```bash
-# 1. Ingest POIs from OpenStreetMap Overpass API
+# 1. Ingest POIs from OpenStreetMap
 python backend/scripts/ingest_osm_data.py --city "Jaipur"
-python backend/scripts/ingest_osm_data.py --city "Goa"
-python backend/scripts/ingest_osm_data.py --city "Mumbai"
 
 # 2. Enrich with Wikidata + Wikipedia metadata
 python backend/scripts/enrich_attractions.py
@@ -463,45 +431,66 @@ python backend/scripts/score_attractions.py
 python backend/scripts/sync_prices.py
 ```
 
-> The demo frontend requests trips for **Jaipur**, **Goa**, and **Mumbai** by default. If your data uses sub-region names like `North Goa`, either update the frontend payload or add a matching `Goa` row to the destinations table.
+### Core Models (18 tables)
+
+**Primary:** `User`, `Trip`, `Destination`, `Attraction`, `Country`, `State`, `AsyncJob`
+
+**Pricing:** `HotelPrice`, `FlightRoute`, `CurrencyRate`
+
+**Intelligence:** `AttractionSignal`, `AnalyticsEvent`, `UserProfile`, `Feedback`
+
+**Admin:** `DestinationRequest`, `FeatureFlag`, `EngineSetting`, `DataSourceLog`, `POIClosure`
 
 ---
 
-## 🧪 Testing
+## Testing
 
 ```bash
-pip install -r backend/tests/requirements-test.txt
-python -m pytest backend/tests -q
+python -m pytest backend/tests/ -v --tb=short
 ```
 
-The suite uses `TESTING=true` with SQLite in-memory, configured via `backend/tests/conftest.py`. Sample destination and attraction records are created automatically.
+**Result: 188 passed, 1 skipped**
 
-**Test coverage:**
+Tests run against SQLite in-memory with `TESTING=true`. No external services required.
 
-| File | What it covers |
+| Test File | Coverage |
 |---|---|
-| `test_auth.py` | Registration, login, JWT validation |
-| `test_api.py` | All endpoint contracts + status codes |
-| `test_engine.py` | Pipeline step unit tests |
-| `test_pipeline.py` | End-to-end itinerary generation |
-| `test_validation.py` | ItineraryValidator edge cases |
+| `test_auth.py` | Registration, login, JWT refresh, /me |
+| `test_api.py` | Admin CRUD, endpoint contracts, status codes |
+| `test_engine.py` | Filter, cluster, budget, route, assembler |
+| `test_pipeline.py` | OSM ingestion, enrichment, price sync, scoring |
+| `test_trips.py` | Generation, save, get, user trips, validation |
+| `test_signals.py` | Signal recording, event type validation |
+| `test_validation.py` | Budget checks, quality scoring, edge cases |
 
 ---
 
-## 🚢 Deployment
+## Security
 
-### Railway (Backend)
+- **JWT authentication** with short-lived access tokens (1h) and long-lived refresh tokens (30d)
+- **Rate limiting** via Redis-backed `Flask-Limiter` on sensitive endpoints
+- **SSE auth** via query-param token (EventSource API cannot send headers)
+- **Admin isolation** with `@require_admin` decorator on all admin/ops endpoints
+- **Strict validation** mode for production-grade itinerary quality checks
+- **Non-root Docker** user in production container
 
-The `railway.toml` deploys using the included `Dockerfile` which runs Gunicorn on port `5000`. Health checks are configured on `/health`.
+---
+
+## Deployment
+
+### Docker Compose (Full Stack)
 
 ```bash
-# Build and push manually
-docker build -t altairgo-engine .
+docker compose up --build
 ```
+
+Starts 5 services: PostgreSQL 15 + PostGIS, Redis 7, Flask + Gunicorn, Celery worker, Celery beat.
+
+### Railway
+
+Pre-configured via `railway.toml`. Deploys using the included `Dockerfile` with Gunicorn (4 workers, 120s timeout). Health checks on `/health`.
 
 ### Vercel (Frontend)
-
-`vercel.json` rewrites frontend `/api/*` requests to `https://api.altairgo.in/api/*`.
 
 ```bash
 cd dummy-frontend
@@ -509,48 +498,28 @@ npm run build
 vercel --prod
 ```
 
-### Docker Compose (Full Stack Local)
-
-```bash
-docker compose up --build
-```
-
-## 🧹 Production Cleanup Sprint (March 2026)
-
-A comprehensive audit was conducted to prepare the codebase for production release. The core architecture has been validated as high-quality, with specific cleanup actions identified:
-
-- **Routing**: Validated clean; no duplicate destination routes found in current frontend.
-- **Data Strategy**: Shift from static files (`blogs.js`, `destinations.js`) to API-driven database storage is in progress.
-- **Prompt Engineering**: Inline prompts in `GeminiService` are targeted for extraction into a template directory.
-- **Environment**: All secrets moved to `.env` with `.env.example` placeholders.
-- **Database**: Schema synchronized with `pgvector` support and audit fields.
-
-For the detailed audit report and implementation roadmap, see the architecture documents in `docs/`.
+`vercel.json` handles SPA rewrites and API proxy.
 
 ---
 
-## 🤝 Contributing
+## Contributing
 
 1. Fork the repository
-2. Create your feature branch: `git checkout -b feature/my-feature`
-3. Commit your changes: `git commit -m 'feat: add my feature'`
-4. Push to the branch: `git push origin feature/my-feature`
-5. Open a Pull Request
-
-Please run `make lint` and `make test` before submitting.
+2. Create your branch: `git checkout -b feature/my-feature`
+3. Run tests: `make test`
+4. Commit: `git commit -m 'feat: add my feature'`
+5. Push and open a Pull Request
 
 ---
 
-## 📄 License
+## License
 
-This project is licensed under the **MIT License** — see the [LICENSE](LICENSE) file for details.
+This project is licensed under the **MIT License** &mdash; see [LICENSE](LICENSE) for details.
 
 ---
 
 <div align="center">
 
-Built with ❤️ by the **AltairGO Intelligence** team
-
-⭐ Star this repo if it helped you!
+Built by **[yash-dev007](https://github.com/yash-dev007)**
 
 </div>

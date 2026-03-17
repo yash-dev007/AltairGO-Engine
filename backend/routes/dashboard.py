@@ -2,7 +2,7 @@ import json
 import time
 from datetime import datetime, timezone
 
-from flask import Blueprint, Response, jsonify, stream_with_context
+from flask import Blueprint, Response, current_app, jsonify, stream_with_context
 
 from backend.database import db
 from backend.models import AnalyticsEvent, AttractionSignal, Destination, DestinationRequest, Trip, User
@@ -114,8 +114,26 @@ def ops_summary():
 
 
 @dashboard_bp.route("/api/ops/live-metrics", methods=["GET"])
-@require_admin
 def live_metrics():
+    """SSE endpoint with query-param auth — EventSource API cannot send custom headers."""
+    import hmac
+    from flask import request as _req
+    from flask_jwt_extended import decode_token
+
+    token = _req.args.get("token")
+    if not token:
+        return jsonify({"error": "Missing token query parameter"}), 401
+
+    # Try JWT decode first, fall back to raw admin key comparison
+    try:
+        claims = decode_token(token)
+        if claims.get("role") != "admin":
+            return jsonify({"error": "Admin role required"}), 403
+    except Exception:
+        expected = current_app.config.get("ADMIN_ACCESS_KEY", "")
+        if not expected or not hmac.compare_digest(token, expected):
+            return jsonify({"error": "Invalid token"}), 401
+
     client = get_metrics_redis()
 
     def generate():

@@ -81,6 +81,20 @@ def list_destinations():
     }), 200
 
 
+@admin_bp.route('/api/admin/destinations', methods=['POST'])
+@require_admin
+def create_destination():
+    data, error = load_request_json(UpdateDestinationSchema())
+    if error:
+        return error
+    if not data.get("name"):
+        return jsonify({"error": "name is required"}), 400
+    dest = Destination(**{k: v for k, v in data.items() if hasattr(Destination, k)})
+    db.session.add(dest)
+    db.session.commit()
+    return jsonify({"message": "Destination created", "id": dest.id}), 201
+
+
 @admin_bp.route('/api/admin/destinations/<int:dest_id>', methods=['PUT'])
 @require_admin
 def update_destination(dest_id):
@@ -221,7 +235,7 @@ def get_trip(trip_id):
         "budget": trip.budget,
         "duration": trip.duration,
         "travelers": trip.travelers,
-        "itinerary": trip.itinerary_data, # Full JSON
+        "itinerary": trip.itinerary_json,
         "created_at": trip.created_at.isoformat() if trip.created_at else None,
     }), 200
 

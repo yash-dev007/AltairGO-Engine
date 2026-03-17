@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, Shield, Sliders, Zap, Database, AlertTriangle, RefreshCw, Key, Globe, Save, CheckCircle2 } from 'lucide-react';
+import { Shield, Sliders, Zap, AlertTriangle, RefreshCw, Key, Globe, Save, CheckCircle2 } from 'lucide-react';
 import { api } from '../services/api';
 
 const IntelligenceHub = () => {
     const [config, setConfig] = useState({
         VALIDATION_STRICT: false,
-        GEMINI_MODEL: 'gemini-1.5-pro',
+        GEMINI_MODEL: 'gemini-2.0-flash',
         THEME_THRESHOLD: 0.20
     });
     const [loading, setLoading] = useState(true);
@@ -45,7 +45,7 @@ const IntelligenceHub = () => {
         }
     };
 
-    if (loading && !config) {
+    if (loading) {
         return (
             <div className="flex justify-center items-center min-h-[50vh]">
                 <RefreshCw className="animate-spin text-green-500" size={32} />
@@ -146,9 +146,9 @@ const IntelligenceHub = () => {
                                 onChange={(e) => setConfig({ ...config, GEMINI_MODEL: e.target.value })}
                                 className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-green-500/20 focus:border-green-500 transition-all"
                             >
-                                <option value="gemini-1.5-pro">Gemini 1.5 Pro (Balanced)</option>
-                                <option value="gemini-1.5-flash">Gemini 1.5 Flash (Fast)</option>
-                                <option value="gemini-2.0-pro">Gemini 2.0 Pro Experimental</option>
+                                <option value="gemini-2.0-flash">Gemini 2.0 Flash (Default)</option>
+                                <option value="gemini-2.0-flash-lite">Gemini 2.0 Flash Lite (Fast)</option>
+                                <option value="gemini-2.5-flash-preview-05-20">Gemini 2.5 Flash Preview (Experimental)</option>
                             </select>
                         </div>
                     </div>
@@ -168,12 +168,12 @@ const IntelligenceHub = () => {
 
                     <div className="space-y-4">
                         {[
-                            { icon: Globe, label: 'Public Destinations API', limit: '30 req/min', color: 'blue' },
-                            { icon: Zap, label: 'Attraction Signals', limit: '60 req/min', color: 'purple' },
-                            { icon: Key, label: 'Admin Access Control', limit: '10 req/min', color: 'red' },
+                            { icon: Globe, label: 'Public Destinations API', limit: '30 req/min', hoverColor: 'group-hover:text-blue-500' },
+                            { icon: Zap, label: 'Attraction Signals', limit: '60 req/min', hoverColor: 'group-hover:text-purple-500' },
+                            { icon: Key, label: 'Admin Access Control', limit: '10 req/min', hoverColor: 'group-hover:text-red-500' },
                         ].map((item, i) => (
                             <div key={i} className="flex items-center gap-4 p-4 bg-slate-50/50 rounded-2xl border border-slate-100 group">
-                                <item.icon className={`text-slate-400 group-hover:text-${item.color}-500 transition-colors`} size={18} />
+                                <item.icon className={`text-slate-400 ${item.hoverColor} transition-colors`} size={18} />
                                 <div>
                                     <p className="text-xs font-extrabold text-slate-700 tracking-tight">{item.label}</p>
                                     <p className="text-[10px] text-slate-500 font-bold uppercase">{item.limit}</p>

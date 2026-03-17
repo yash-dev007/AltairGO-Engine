@@ -47,6 +47,8 @@ def run_enrichment():
     from backend.scripts.enrich_attractions import run_enrichment as _run
 
     result = _run_and_record("enrichment", _run)
+    mark_status("agent", "mcp_context", "ok", result)
+    mark_status("agent", "web_scraper", "ok", result)
     log.info("Celery: Enrichment complete.")
     return result
 
@@ -58,6 +60,7 @@ def run_scoring():
     from backend.scripts.score_attractions import run_scoring as _run
 
     result = _run_and_record("scoring", _run)
+    mark_status("agent", "memory_agent", "ok", result)
     log.info("Celery: Scoring complete.")
     return result
 
@@ -93,6 +96,7 @@ def run_destination_validation():
     try:
         agent = DestinationValidatorAgent(session)
         result = _run_and_record("destination_validation", agent.run_pending_requests)
+        mark_status("agent", "destination_validator", "ok", result)
         return result
     finally:
         session.close()
@@ -107,6 +111,7 @@ def run_cache_warm():
     try:
         agent = CacheWarmerAgent(session)
         result = _run_and_record("cache_warm", agent.warm)
+        mark_status("agent", "cache_warmer", "ok", result)
         return result
     finally:
         session.close()
@@ -118,6 +123,7 @@ def run_affiliate_health():
     from backend.tasks.affiliate_health import check_affiliate_health
 
     result = _run_and_record("affiliate_health", check_affiliate_health)
+    mark_status("agent", "affiliate_health", "ok", result)
     return result
 
 
@@ -130,6 +136,8 @@ def run_quality_scoring():
     try:
         pipeline = ItineraryQualityPipeline(session)
         result = _run_and_record("quality_scoring", pipeline.score_all_trips)
+        mark_status("agent", "quality_scorer", "ok", result)
+        mark_status("agent", "itinerary_qa", "ok", result)
         return result
     finally:
         session.close()
@@ -227,4 +235,5 @@ def heartbeat():
     from datetime import datetime, timezone
     now = datetime.now(timezone.utc).isoformat()
     set_metric("heartbeat:worker:last_seen", now)
+    mark_status("agent", "token_optimizer", "ok", {"status": "alive", "ts": now})
     return {"status": "alive", "ts": now}

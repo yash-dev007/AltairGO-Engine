@@ -73,15 +73,15 @@ export const api = {
 
     // ── Destination Requests ─────────────────────────────────
     getDestinationRequests: (page = 1) =>
-        fetchWithAuth(`/api/admin/destination-requests?page=${page}`),
+        fetchWithAuth(`/api/admin/requests?page=${page}`),
 
     approveRequest: (requestId) =>
-        fetchWithAuth(`/api/admin/destination-requests/${requestId}/approve`, {
+        fetchWithAuth(`/api/admin/requests/${requestId}/approve`, {
             method: 'POST',
         }),
 
     rejectRequest: (requestId) =>
-        fetchWithAuth(`/api/admin/destination-requests/${requestId}/reject`, {
+        fetchWithAuth(`/api/admin/requests/${requestId}/reject`, {
             method: 'POST',
         }),
 
@@ -116,6 +116,24 @@ export const api = {
             method: 'POST',
             body: JSON.stringify({ agent_key: agentKey }),
         }),
+
+    // ── Itinerary Generation ─────────────────────────────────
+    generateItinerary: (destination, budget, duration, travelers, style = 'balanced', traveler_type = 'solo') =>
+        fetchWithAuth('/generate-itinerary', {
+            method: 'POST',
+            body: JSON.stringify({
+                destination_country: destination,
+                selected_destinations: [{ name: destination }],
+                start_city: destination,
+                budget,
+                duration,
+                travelers,
+                style,
+                traveler_type,
+            }),
+        }),
+
+    getItineraryStatus: (jobId) => fetchWithAuth(`/get-itinerary-status/${jobId}`),
 
     // ── SSE Stream ───────────────────────────────────────────
     getLiveMetricsURL: () => `${API_BASE}/api/ops/live-metrics`,

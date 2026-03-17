@@ -1,4 +1,12 @@
 version: "3.9"
+
+x-shared-env: &shared-env
+  REDIS_URL: redis://redis:6379/0
+  DATABASE_URL: postgresql://altairgo:${DB_PASSWORD:-altairgo_dev_pass}@postgres:5432/altairgo
+  JWT_SECRET_KEY: ${JWT_SECRET_KEY:?JWT_SECRET_KEY must be set}
+  ADMIN_ACCESS_KEY: ${ADMIN_ACCESS_KEY:?ADMIN_ACCESS_KEY must be set}
+  GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+
 services:
   postgres:
     image: postgis/postgis:15-3.4
@@ -12,7 +20,6 @@ services:
       - "5432:5432"
     volumes:
       - pg_data:/var/lib/postgresql/data
-      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
       test: [ "CMD-SHELL", "pg_isready -U altairgo -d altairgo" ]
       interval: 10s
@@ -29,17 +36,38 @@ services:
       - redis_data:/data
     command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
 
+  web:
+    build: .
+    container_name: altairgo_web
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      <<: *shared-env
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-https://altairgo.in,http://localhost:5173}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 40s
+
   celery_worker:
     build: .
     container_name: altairgo_celery_worker
     restart: unless-stopped
     command: celery -A backend.celery_config:celery_app worker --loglevel=info
     environment:
-      REDIS_URL: redis://redis:6379/0
-      DATABASE_URL: postgresql://altairgo:${DB_PASSWORD:-altairgo_dev_pass}@postgres:5432/altairgo
+      <<: *shared-env
     depends_on:
-      - postgres
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
 
   celery_beat:
     build: .
@@ -47,11 +75,12 @@ services:
     restart: unless-stopped
     command: celery -A backend.celery_config:celery_app beat --loglevel=info
     environment:
-      REDIS_URL: redis://redis:6379/0
-      DATABASE_URL: postgresql://altairgo:${DB_PASSWORD:-altairgo_dev_pass}@postgres:5432/altairgo
+      <<: *shared-env
     depends_on:
-      - postgres
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
 
 volumes:
   pg_data:

@@ -1,6 +1,8 @@
-import React, { useState, useEffect } from 'react';
-import { Users, Map, Clock, ArrowRight, Shield, Globe, Trash2, Eye, RefreshCw, AlertCircle } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Users, Map, Clock, Globe, Trash2, Eye, RefreshCw, Database, ChevronLeft, ChevronRight } from 'lucide-react';
 import { api } from '../services/api';
+
+const PAGE_SIZE = 10;
 
 const NetworkHub = () => {
     const [users, setUsers] = useState([]);
@@ -8,26 +10,32 @@ const NetworkHub = () => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [selectedTrip, setSelectedTrip] = useState(null);
+    const [userPage, setUserPage] = useState(1);
+    const [tripPage, setTripPage] = useState(1);
+    const [userTotal, setUserTotal] = useState(0);
+    const [tripTotal, setTripTotal] = useState(0);
 
-    const fetchData = async () => {
+    const fetchData = useCallback(async () => {
         setLoading(true);
         try {
             const [usersData, tripsData] = await Promise.all([
-                api.getUsers(1, 10),
-                api.getTrips(1, 10)
+                api.getUsers(userPage, PAGE_SIZE),
+                api.getTrips(tripPage, PAGE_SIZE)
             ]);
             setUsers(usersData.items || []);
+            setUserTotal(usersData.total || 0);
             setTrips(tripsData.items || []);
+            setTripTotal(tripsData.total || 0);
         } catch (err) {
             setError(err.message);
         } finally {
             setLoading(false);
         }
-    };
+    }, [userPage, tripPage]);
 
     useEffect(() => {
         fetchData();
-    }, []);
+    }, [fetchData]);
 
     const handleDeleteTrip = async (id) => {
         if (!window.confirm("Are you sure you want to delete this trip?")) return;
@@ -104,7 +112,7 @@ const NetworkHub = () => {
                                 </div>
                                 <button
                                     onClick={() => handleDeleteUser(user.id)}
-                                    className="p-2 text-slate-300 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
+                                    className="p-2 text-slate-300 hover:text-red-500 transition-colors sm:opacity-0 sm:group-hover:opacity-100"
                                     title="Delete User"
                                 >
                                     <Trash2 size={18} />
@@ -112,6 +120,16 @@ const NetworkHub = () => {
                             </div>
                         ))}
                     </div>
+                    {userTotal > PAGE_SIZE && (
+                        <div className="flex items-center justify-between mt-6 pt-4 border-t border-slate-100">
+                            <span className="text-[10px] font-bold text-slate-400 uppercase">{userTotal} total</span>
+                            <div className="flex items-center gap-2">
+                                <button disabled={userPage === 1} onClick={() => setUserPage(p => p - 1)} className="p-1.5 rounded-lg border border-slate-200 text-slate-400 hover:text-slate-700 disabled:opacity-30 transition-all"><ChevronLeft size={16} /></button>
+                                <span className="text-xs font-bold text-slate-500 w-16 text-center">Page {userPage}</span>
+                                <button disabled={users.length < PAGE_SIZE} onClick={() => setUserPage(p => p + 1)} className="p-1.5 rounded-lg border border-slate-200 text-slate-400 hover:text-slate-700 disabled:opacity-30 transition-all"><ChevronRight size={16} /></button>
+                            </div>
+                        </div>
+                    )}
                 </div>
 
                 {/* Generated Trips */}
@@ -164,6 +182,16 @@ const NetworkHub = () => {
                             </div>
                         ))}
                     </div>
+                    {tripTotal > PAGE_SIZE && (
+                        <div className="flex items-center justify-between mt-6 pt-4 border-t border-slate-100">
+                            <span className="text-[10px] font-bold text-slate-400 uppercase">{tripTotal} total</span>
+                            <div className="flex items-center gap-2">
+                                <button disabled={tripPage === 1} onClick={() => setTripPage(p => p - 1)} className="p-1.5 rounded-lg border border-slate-200 text-slate-400 hover:text-slate-700 disabled:opacity-30 transition-all"><ChevronLeft size={16} /></button>
+                                <span className="text-xs font-bold text-slate-500 w-16 text-center">Page {tripPage}</span>
+                                <button disabled={trips.length < PAGE_SIZE} onClick={() => setTripPage(p => p + 1)} className="p-1.5 rounded-lg border border-slate-200 text-slate-400 hover:text-slate-700 disabled:opacity-30 transition-all"><ChevronRight size={16} /></button>
+                            </div>
+                        </div>
+                    )}
                 </div>
             </div>
 

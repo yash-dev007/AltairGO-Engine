@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import {
     Bot,
     Cpu,
@@ -14,7 +15,6 @@ import {
     XCircle,
     Loader2,
     Globe,
-    ZapOff
 } from 'lucide-react';
 import { api } from '../services/api';
 
@@ -30,11 +30,23 @@ const AGENT_META = {
     affiliate_health: { icon: Activity, desc: 'Monitors partner booking API health status' },
 };
 
+const fmtRelTime = (iso) => {
+    if (!iso || iso === 'Never') return 'Never';
+    try {
+        const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+        if (diff < 60) return `${diff}s ago`;
+        if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+        if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+        return `${Math.floor(diff / 86400)}d ago`;
+    } catch { return iso; }
+};
+
 const AIAgentHub = () => {
     const [ops, setOps] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [triggering, setTriggering] = useState({});
+    const [triggerSuccess, setTriggerSuccess] = useState({});
 
     const fetchData = useCallback(async () => {
         try {
@@ -56,12 +68,15 @@ const AIAgentHub = () => {
 
     const handleTriggerAgent = async (key) => {
         setTriggering(prev => ({ ...prev, [key]: true }));
+        setTriggerSuccess(prev => ({ ...prev, [key]: null }));
         try {
             await api.triggerAgent(key);
-            // Optionally fetch data again to see status change
-            setTimeout(fetchData, 2000);
+            setTriggerSuccess(prev => ({ ...prev, [key]: 'ok' }));
+            setTimeout(() => setTriggerSuccess(prev => ({ ...prev, [key]: null })), 4000);
+            setTimeout(fetchData, 3000);
         } catch (err) {
-            alert(`Trigger failed for ${key}: ${err.message}`);
+            setTriggerSuccess(prev => ({ ...prev, [key]: 'error' }));
+            setTimeout(() => setTriggerSuccess(prev => ({ ...prev, [key]: null })), 4000);
         } finally {
             setTriggering(prev => ({ ...prev, [key]: false }));
         }
@@ -148,7 +163,7 @@ const AIAgentHub = () => {
                                 <agent.icon size={32} />
                             </div>
                             <div className="flex flex-col items-end">
-                                <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest mb-1">{agent.lastRun}</span>
+                                <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest mb-1">{fmtRelTime(agent.lastRun)}</span>
                                 <span className={`px-3 py-1 text-[10px] font-black rounded-lg uppercase tracking-tighter ${agent.isOk ? 'bg-green-100 text-green-700' : agent.status === 'idle' ? 'bg-slate-100 text-slate-500' : 'bg-amber-100 text-amber-700'}`}>
                                     {agent.status}
                                 </span>
@@ -164,14 +179,26 @@ const AIAgentHub = () => {
                             <button
                                 onClick={() => handleTriggerAgent(agent.key)}
                                 disabled={triggering[agent.key]}
-                                className="flex-1 py-3 bg-slate-900 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-slate-900/20 hover:bg-slate-800 transition-all flex items-center justify-center gap-2 active:scale-95 disabled:opacity-50"
+                                className={`flex-1 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg transition-all flex items-center justify-center gap-2 active:scale-95 disabled:opacity-50 ${
+                                    triggerSuccess[agent.key] === 'ok'
+                                        ? 'bg-green-500 text-white shadow-green-500/20'
+                                        : triggerSuccess[agent.key] === 'error'
+                                        ? 'bg-red-500 text-white shadow-red-500/20'
+                                        : 'bg-slate-900 text-white shadow-slate-900/20 hover:bg-slate-800'
+                                }`}
                             >
-                                {triggering[agent.key] ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} fill="currentColor" />}
-                                {triggering[agent.key] ? 'TRIGGERING...' : 'TRIGGER AGENT'}
+                                {triggering[agent.key] ? <Loader2 size={14} className="animate-spin" /> :
+                                 triggerSuccess[agent.key] === 'ok' ? <CheckCircle2 size={14} /> :
+                                 triggerSuccess[agent.key] === 'error' ? <XCircle size={14} /> :
+                                 <Play size={14} fill="currentColor" />}
+                                {triggering[agent.key] ? 'QUEUING...' :
+                                 triggerSuccess[agent.key] === 'ok' ? 'DISPATCHED!' :
+                                 triggerSuccess[agent.key] === 'error' ? 'FAILED' :
+                                 'TRIGGER AGENT'}
                             </button>
-                            <button className="p-3 bg-slate-50 text-slate-400 rounded-2xl border border-slate-100 hover:text-slate-600 transition-all">
+                            <Link to="/settings" className="p-3 bg-slate-50 text-slate-400 rounded-2xl border border-slate-100 hover:text-slate-600 transition-all">
                                 <Settings2 size={18} />
-                            </button>
+                            </Link>
                         </div>
                     </div>
                 ))}
@@ -200,7 +227,7 @@ const AIAgentHub = () => {
                                     </div>
                                     <div className="space-y-1">
                                         <p className="text-[9px] text-slate-500 font-black uppercase tracking-widest">Last Execution</p>
-                                        <p className="text-xs text-slate-300 font-bold">{task.lastRun}</p>
+                                        <p className="text-xs text-slate-300 font-bold">{fmtRelTime(task.lastRun)}</p>
                                     </div>
                                 </div>
                             ))}

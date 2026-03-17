@@ -6,7 +6,7 @@ try:
     from backend.database import Base
 except ImportError:
     from database import Base
-from datetime import datetime
+from datetime import datetime, timezone
 
 # Fallback for SQLite testing which lacks PostGIS and PGVector
 if os.environ.get("TESTING") == "true" or os.environ.get("FLASK_ENV") == "testing":
@@ -198,7 +198,7 @@ class HotelPrice(Base):
     availability_score  = Column(Float, default=1.0)       # 0.0–1.0
     latitude            = Column(Float)
     longitude           = Column(Float)
-    last_synced         = Column(DateTime, default=datetime.utcnow)
+    last_synced         = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     destination         = relationship('Destination', back_populates='hotel_prices')
 
@@ -215,7 +215,7 @@ class FlightRoute(Base):
     frequency_per_week = Column(SmallInteger)
     transport_type     = Column(String(20), default='flight', index=True) # flight / train / bus
     train_classes      = Column(JSON)                          # {ac: 1200, sleeper: 450}
-    last_synced        = Column(DateTime, default=datetime.utcnow)
+    last_synced        = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 class Trip(Base):
     __tablename__ = 'trip'

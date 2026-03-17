@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-    MapPin, Search, Edit2, Trash2, CheckCircle2,
-    XCircle, Loader2, Save, X, RefreshCw, Filter, ShieldAlert,
-    Database, Plus, ChevronLeft, ChevronRight, Hash, Globe
+    Edit2, Trash2, CheckCircle2,
+    Loader2, Save, X, RefreshCw, ShieldAlert,
+    Plus, ChevronLeft, ChevronRight, Hash, Globe,
+    Inbox, Check, XCircle, Clock
 } from 'lucide-react';
 import { api } from '../services/api';
 
@@ -16,7 +17,14 @@ const DataLaboratory = () => {
     const [editForm, setEditForm] = useState({});
     const [actionLoading, setActionLoading] = useState(false);
     const [showAddModal, setShowAddModal] = useState(false);
-    const [newDest, setNewDest] = useState({ name: '', tag: '', status: 'active', estimated_cost_per_day: 0, rating: 0 });
+    const [newDest, setNewDest] = useState({ name: '', tag: '', description: '', estimated_cost_per_day: 0, rating: 0 });
+
+    // Destination Requests state
+    const [requests, setRequests] = useState([]);
+    const [requestsTotal, setRequestsTotal] = useState(0);
+    const [requestsPage, setRequestsPage] = useState(1);
+    const [requestsLoading, setRequestsLoading] = useState(false);
+    const [requestAction, setRequestAction] = useState(null); // tracks which request id is being acted on
 
     const pageSize = 15;
 
@@ -34,16 +42,57 @@ const DataLaboratory = () => {
         }
     }, [page]);
 
+    const fetchRequests = useCallback(async () => {
+        setRequestsLoading(true);
+        try {
+            const data = await api.getDestinationRequests(requestsPage);
+            setRequests(data.items || []);
+            setRequestsTotal(data.total || 0);
+        } catch {
+            // silently fail — requests panel is supplementary
+        } finally {
+            setRequestsLoading(false);
+        }
+    }, [requestsPage]);
+
     useEffect(() => {
         fetchDestinations();
     }, [fetchDestinations]);
+
+    useEffect(() => {
+        fetchRequests();
+    }, [fetchRequests]);
+
+    const handleApprove = async (id) => {
+        setRequestAction(id);
+        try {
+            await api.approveRequest(id);
+            fetchRequests();
+            fetchDestinations(); // approved request creates a destination
+        } catch (err) {
+            alert(`Approve failed: ${err.message}`);
+        } finally {
+            setRequestAction(null);
+        }
+    };
+
+    const handleReject = async (id) => {
+        setRequestAction(id);
+        try {
+            await api.rejectRequest(id);
+            fetchRequests();
+        } catch (err) {
+            alert(`Reject failed: ${err.message}`);
+        } finally {
+            setRequestAction(null);
+        }
+    };
 
     const handleEditClick = (dest) => {
         setEditingId(dest.id);
         setEditForm({
             name: dest.name || '',
             tag: dest.tag || '',
-            status: dest.status || 'active',
             estimated_cost_per_day: dest.estimated_cost_per_day || 0,
             rating: dest.rating || 0
         });
@@ -68,7 +117,7 @@ const DataLaboratory = () => {
         try {
             await api.createDestination(newDest);
             setShowAddModal(false);
-            setNewDest({ name: '', tag: '', status: 'active', estimated_cost_per_day: 0, rating: 0 });
+            setNewDest({ name: '', tag: '', description: '', estimated_cost_per_day: 0, rating: 0 });
             fetchDestinations();
         } catch (err) {
             alert(`Creation error: ${err.message}`);
@@ -155,7 +204,7 @@ const DataLaboratory = () => {
                         <thead>
                             <tr className="bg-slate-50/50 border-b border-slate-100 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">
                                 <th className="px-8 py-5">Node Context</th>
-                                <th className="px-8 py-5">Status</th>
+                                <th className="px-8 py-5">Slug</th>
                                 <th className="px-8 py-5">Tagging</th>
                                 <th className="px-8 py-5">Est. Cost/Day</th>
                                 <th className="px-8 py-5">Quality</th>
@@ -187,23 +236,9 @@ const DataLaboratory = () => {
                                             )}
                                         </td>
                                         <td className="px-8 py-6">
-                                            {isEditing ? (
-                                                <select
-                                                    className="bg-white border border-slate-200 p-3 rounded-xl text-sm font-bold outline-none"
-                                                    value={editForm.status}
-                                                    onChange={(e) => setEditForm({ ...editForm, status: e.target.value })}
-                                                >
-                                                    <option value="active">Active</option>
-                                                    <option value="inactive">Inactive</option>
-                                                    <option value="draft">Draft</option>
-                                                </select>
-                                            ) : (
-                                                <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${dest.status === 'active' ? 'bg-green-100 text-green-700' :
-                                                        dest.status === 'draft' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-500'
-                                                    }`}>
-                                                    {dest.status || 'Active'}
-                                                </span>
-                                            )}
+                                            <span className="text-[10px] font-mono font-bold text-slate-400 bg-slate-50 px-2 py-1 rounded-md">
+                                                {dest.slug || '—'}
+                                            </span>
                                         </td>
                                         <td className="px-8 py-6">
                                             {isEditing ? (
@@ -272,6 +307,125 @@ const DataLaboratory = () => {
                 </div>
             </div>
 
+            {/* PENDING DESTINATION REQUESTS */}
+            <div className="bg-white rounded-[2.5rem] border border-slate-100 shadow-2xl shadow-slate-200/60 overflow-hidden">
+                <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/20">
+                    <div className="flex items-center gap-4">
+                        <div className="size-10 bg-amber-50 text-amber-600 rounded-xl flex items-center justify-center shadow-inner">
+                            <Inbox size={18} />
+                        </div>
+                        <div>
+                            <h3 className="font-extrabold text-slate-800 text-sm uppercase tracking-wider">Destination Requests</h3>
+                            <p className="text-[10px] text-slate-400 font-bold">User-submitted destinations awaiting review</p>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                        <button onClick={fetchRequests} className="p-2 bg-white border border-slate-200 rounded-xl text-slate-400 hover:text-slate-900 transition-all shadow-sm">
+                            <RefreshCw size={16} />
+                        </button>
+                        {requestsTotal > 0 && (
+                            <span className="text-[10px] font-black text-amber-600 bg-amber-50 px-3 py-1 rounded-full uppercase">
+                                {requestsTotal} total
+                            </span>
+                        )}
+                    </div>
+                </div>
+
+                {requestsLoading && requests.length === 0 ? (
+                    <div className="p-12 flex items-center justify-center">
+                        <Loader2 className="animate-spin text-slate-300" size={24} />
+                    </div>
+                ) : requests.length === 0 ? (
+                    <div className="p-12 text-center space-y-3">
+                        <CheckCircle2 className="mx-auto text-green-300" size={32} />
+                        <p className="text-sm font-bold text-slate-400">No pending requests — all clear.</p>
+                    </div>
+                ) : (
+                    <>
+                        <div className="divide-y divide-slate-100">
+                            {requests.map((req) => {
+                                const isPending = req.status === 'pending';
+                                const isActing = requestAction === req.id;
+                                return (
+                                    <div key={req.id} className="px-8 py-5 flex items-center gap-6 group hover:bg-slate-50/30 transition-colors">
+                                        <div className={`size-10 rounded-xl flex items-center justify-center shrink-0 ${
+                                            req.status === 'approved' ? 'bg-green-50 text-green-500' :
+                                            req.status === 'rejected' ? 'bg-red-50 text-red-400' :
+                                            'bg-amber-50 text-amber-500'
+                                        }`}>
+                                            {req.status === 'approved' ? <Check size={18} /> :
+                                             req.status === 'rejected' ? <XCircle size={16} /> :
+                                             <Clock size={16} />}
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <div className="flex items-center gap-3">
+                                                <p className="font-black text-slate-900 text-sm truncate">{req.name}</p>
+                                                {req.tag && (
+                                                    <span className="text-[9px] font-black text-slate-400 uppercase bg-slate-100 px-2 py-0.5 rounded-md shrink-0">{req.tag}</span>
+                                                )}
+                                            </div>
+                                            <p className="text-[11px] text-slate-400 font-medium truncate mt-0.5">
+                                                {req.description || 'No description provided'}
+                                                {req.cost ? ` · $${req.cost}/day` : ''}
+                                            </p>
+                                        </div>
+                                        <div className="flex items-center gap-2 shrink-0">
+                                            {isPending ? (
+                                                <>
+                                                    <button
+                                                        onClick={() => handleApprove(req.id)}
+                                                        disabled={isActing}
+                                                        className="flex items-center gap-1.5 px-4 py-2.5 bg-green-500 text-white text-[10px] font-black uppercase tracking-wider rounded-xl shadow-lg shadow-green-500/20 hover:bg-green-600 disabled:opacity-50 transition-all active:scale-95"
+                                                    >
+                                                        {isActing ? <Loader2 className="animate-spin" size={12} /> : <Check size={12} />}
+                                                        Approve
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleReject(req.id)}
+                                                        disabled={isActing}
+                                                        className="flex items-center gap-1.5 px-4 py-2.5 bg-white text-red-500 border border-red-200 text-[10px] font-black uppercase tracking-wider rounded-xl hover:bg-red-50 disabled:opacity-50 transition-all active:scale-95"
+                                                    >
+                                                        {isActing ? <Loader2 className="animate-spin" size={12} /> : <XCircle size={12} />}
+                                                        Reject
+                                                    </button>
+                                                </>
+                                            ) : (
+                                                <span className={`text-[10px] font-black uppercase tracking-wider px-3 py-1.5 rounded-full ${
+                                                    req.status === 'approved' ? 'text-green-600 bg-green-50' : 'text-red-500 bg-red-50'
+                                                }`}>
+                                                    {req.status}
+                                                </span>
+                                            )}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+
+                        {/* Requests pagination */}
+                        {requestsTotal > 50 && (
+                            <div className="p-4 border-t border-slate-100 flex justify-center items-center gap-3">
+                                <button
+                                    disabled={requestsPage === 1}
+                                    onClick={() => setRequestsPage(p => p - 1)}
+                                    className="p-2 bg-white border border-slate-200 rounded-xl text-slate-400 hover:text-slate-900 disabled:opacity-30 transition-all shadow-sm"
+                                >
+                                    <ChevronLeft size={16} />
+                                </button>
+                                <span className="text-xs font-black text-slate-500 uppercase">Page {requestsPage}</span>
+                                <button
+                                    disabled={requests.length < 50}
+                                    onClick={() => setRequestsPage(p => p + 1)}
+                                    className="p-2 bg-white border border-slate-200 rounded-xl text-slate-400 hover:text-slate-900 disabled:opacity-30 transition-all shadow-sm"
+                                >
+                                    <ChevronRight size={16} />
+                                </button>
+                            </div>
+                        )}
+                    </>
+                )}
+            </div>
+
             {/* ADD DESTINATION MODAL */}
             {showAddModal && (
                 <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-50 flex items-center justify-center p-6 animate-fade-in">
@@ -311,16 +465,13 @@ const DataLaboratory = () => {
                                         />
                                     </div>
                                     <div>
-                                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2 px-1">Registry Status</label>
-                                        <select
-                                            className="w-full px-4 py-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold focus:bg-white focus:border-slate-900 outline-none transition-all appearance-none"
-                                            value={newDest.status}
-                                            onChange={(e) => setNewDest({ ...newDest, status: e.target.value })}
-                                        >
-                                            <option value="active">Active</option>
-                                            <option value="draft">Draft</option>
-                                            <option value="inactive">Inactive</option>
-                                        </select>
+                                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2 px-1">Short Description</label>
+                                        <input
+                                            placeholder="e.g. Coastal paradise"
+                                            className="w-full px-4 py-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold focus:bg-white focus:ring-4 focus:ring-slate-900/5 focus:border-slate-900 outline-none transition-all"
+                                            value={newDest.description}
+                                            onChange={(e) => setNewDest({ ...newDest, description: e.target.value })}
+                                        />
                                     </div>
                                 </div>
                                 <div className="grid grid-cols-2 gap-4">

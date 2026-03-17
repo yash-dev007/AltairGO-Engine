@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
     MapPin,
     Calendar,
@@ -10,7 +10,6 @@ import {
     Send,
     DollarSign,
     Clock,
-    Database
 } from 'lucide-react';
 import { api } from '../services/api';
 
@@ -20,12 +19,21 @@ const Planner = () => {
         budget: 2000,
         duration: 7,
         travelers: 1,
-        style: 'balanced'
+        style: 'balanced',
+        traveler_type: 'solo',
     });
     const [generating, setGenerating] = useState(false);
     const [status, setStatus] = useState(null);
     const [error, setError] = useState(null);
     const [result, setResult] = useState(null);
+    const pollRef = useRef(null);
+
+    // Cleanup poll on unmount to prevent memory leak
+    useEffect(() => {
+        return () => {
+            if (pollRef.current) clearInterval(pollRef.current);
+        };
+    }, []);
 
     const handleGenerate = async (e) => {
         e.preventDefault();
@@ -41,7 +49,9 @@ const Planner = () => {
                 formData.destination,
                 formData.budget,
                 formData.duration,
-                formData.travelers
+                formData.travelers,
+                formData.style,
+                formData.traveler_type
             );
             pollStatus(data.job_id);
         } catch (err) {
@@ -50,8 +60,9 @@ const Planner = () => {
         }
     };
 
-    const pollStatus = async (id) => {
-        const interval = setInterval(async () => {
+    const pollStatus = (id) => {
+        if (pollRef.current) clearInterval(pollRef.current);
+        pollRef.current = setInterval(async () => {
             try {
                 const data = await api.getItineraryStatus(id);
                 setStatus(data.status);
@@ -59,11 +70,13 @@ const Planner = () => {
                 if (data.status === 'completed') {
                     setResult(data.result);
                     setGenerating(false);
-                    clearInterval(interval);
+                    clearInterval(pollRef.current);
+                    pollRef.current = null;
                 } else if (data.status === 'failed') {
                     setError(data.error || "Generation failed at the reasoning layer.");
                     setGenerating(false);
-                    clearInterval(interval);
+                    clearInterval(pollRef.current);
+                    pollRef.current = null;
                 }
             } catch (err) {
                 console.error("Polling error:", err);
@@ -128,6 +141,32 @@ const Planner = () => {
                                 </div>
                             </div>
 
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                    <label className="text-xs font-black text-slate-400 uppercase tracking-widest ml-1">Travelers</label>
+                                    <div className="flex items-center gap-2">
+                                        <button type="button" onClick={() => setFormData({ ...formData, travelers: Math.max(1, formData.travelers - 1) })} className="size-10 bg-slate-50 border border-slate-100 rounded-xl font-bold text-slate-500 hover:bg-slate-100 transition-all">-</button>
+                                        <span className="flex-1 text-center font-black text-slate-900 text-lg">{formData.travelers}</span>
+                                        <button type="button" onClick={() => setFormData({ ...formData, travelers: Math.min(20, formData.travelers + 1) })} className="size-10 bg-slate-50 border border-slate-100 rounded-xl font-bold text-slate-500 hover:bg-slate-100 transition-all">+</button>
+                                    </div>
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-xs font-black text-slate-400 uppercase tracking-widest ml-1">Traveler Type</label>
+                                    <select
+                                        value={formData.traveler_type}
+                                        onChange={(e) => setFormData({ ...formData, traveler_type: e.target.value })}
+                                        className="w-full px-3 py-2.5 bg-slate-50 border border-slate-100 rounded-xl font-bold text-sm text-slate-900 outline-none focus:border-green-500 transition-all"
+                                    >
+                                        <option value="solo">Solo</option>
+                                        <option value="solo_male">Solo Male</option>
+                                        <option value="solo_female">Solo Female</option>
+                                        <option value="couple">Couple</option>
+                                        <option value="family">Family</option>
+                                        <option value="group">Group</option>
+                                    </select>
+                                </div>
+                            </div>
+
                             <div className="space-y-3">
                                 <label className="text-xs font-black text-slate-400 uppercase tracking-widest ml-1">Experience Style</label>
                                 <div className="grid grid-cols-2 gap-2">
@@ -164,7 +203,7 @@ const Planner = () => {
                                 <div className="size-8 bg-green-500 text-white rounded-lg flex items-center justify-center font-black text-xs">AI</div>
                                 <h4 className="font-bold text-green-800 uppercase text-xs tracking-widest">Pipeline Active</h4>
                             </div>
-                            <p className="text-sm font-bold text-green-700 capitalize">{status?.replace('_', ' ')}...</p>
+                            <p className="text-sm font-bold text-green-700 capitalize">{status?.replaceAll('_', ' ')}...</p>
                             <div className="w-full bg-green-200 h-1.5 rounded-full overflow-hidden">
                                 <div className="bg-green-600 h-full w-1/3 animate-progress" />
                             </div>
@@ -195,7 +234,14 @@ const Planner = () => {
                                         </span>
                                     </div>
                                 </div>
-                                <button className="p-4 bg-slate-50 text-slate-400 rounded-2xl border border-slate-100 hover:text-slate-600 transition-all">
+                                <button
+                                    onClick={() => {
+                                        const text = JSON.stringify(result, null, 2);
+                                        navigator.clipboard.writeText(text).then(() => alert('Itinerary copied to clipboard!'));
+                                    }}
+                                    title="Copy itinerary to clipboard"
+                                    className="p-4 bg-slate-50 text-slate-400 rounded-2xl border border-slate-100 hover:text-green-600 hover:border-green-200 transition-all active:scale-95"
+                                >
                                     <Send size={24} />
                                 </button>
                             </div>
@@ -203,13 +249,21 @@ const Planner = () => {
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                 {result.itinerary?.map((day, idx) => (
                                     <div key={idx} className="p-6 bg-slate-50 rounded-3xl border border-slate-100 space-y-4 group hover:bg-white hover:shadow-xl transition-all flex flex-col">
-                                        <h3 className="font-black text-slate-400 group-hover:text-green-500 transition-colors uppercase tracking-widest text-[10px]">Day {day.day_number}</h3>
-                                        <p className="font-bold text-slate-800 text-sm leading-relaxed mb-4">{day.description}</p>
+                                        <div className="flex items-center justify-between">
+                                            <h3 className="font-black text-slate-400 group-hover:text-green-500 transition-colors uppercase tracking-widest text-[10px]">Day {day.day}</h3>
+                                            {day.theme && (
+                                                <span className="text-[9px] font-black text-green-600 bg-green-50 px-2 py-0.5 rounded-full uppercase tracking-tight">{day.theme}</span>
+                                            )}
+                                        </div>
+                                        <p className="font-bold text-slate-700 text-xs">{day.location}</p>
                                         <div className="space-y-2 pt-2 border-t border-slate-200/50">
                                             {day.activities?.map((act, i) => (
                                                 <div key={i} className="flex items-start gap-2">
                                                     <div className="size-1 bg-green-500 rounded-full mt-2 shrink-0" />
-                                                    <p className="text-xs text-slate-500 font-medium">{act}</p>
+                                                    <div>
+                                                        <p className="text-xs text-slate-700 font-semibold">{act.time && <span className="text-green-600 mr-1">{act.time}</span>}{act.activity}</p>
+                                                        {act.description && <p className="text-[10px] text-slate-400 mt-0.5">{act.description}</p>}
+                                                    </div>
                                                 </div>
                                             ))}
                                         </div>

@@ -29,9 +29,13 @@ celery_app.conf.update(
     result_serializer="json",
     timezone="Asia/Kolkata",
     enable_utc=True,
-    redbeat_redis_url=REDIS_URL,
-    beat_scheduler="redbeat.RedBeatScheduler",
 )
+
+if not TESTING:
+    celery_app.conf.update(
+        redbeat_redis_url=REDIS_URL,
+        beat_scheduler="redbeat.RedBeatScheduler",
+    )
 
 if not TESTING:
     celery_app.conf.beat_schedule = {
