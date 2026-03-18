@@ -106,23 +106,32 @@ for {user_prefs.get('days', 3)} days.
 
 Skeleton: {json.dumps(skeleton)}
 
-Rewrite ONLY these fields for each activity:
-- description
-- why_this_fits
-- local_secret
-- how_to_reach
+Rewrite ONLY these 4 text fields for each activity:
+- description  (vivid, sensory, under 60 words, second person)
+- why_this_fits  (1 sentence explaining why it suits this traveler type)
+- local_secret  (1 insider tip — best time, hidden entrance, local trick)
+- how_to_reach  (concise directions from previous stop or hotel)
 
 STRICT RULES:
 - NEVER change activity names, destination names, accommodation names, or theme names.
-- NEVER change cost, time, time_range, latitude, longitude, day_total, total_cost,
-  accommodation cost, or any numeric or coordinate value.
-- NEVER add or remove activities.
-- NEVER reorder activities.
-- Return the exact same JSON shape for the updates you provide.
-- Keep each description under 60 words.
-- Write in second person.
-
-Return ONLY a JSON array of daily activity text updates.
+- NEVER change cost, time, latitude, longitude, day_total, total_cost, or any numeric value.
+- NEVER add, remove, or reorder activities.
+- Return ONLY a JSON array — one object per day — matching this exact structure:
+[
+  {{
+    "day": 1,
+    "activities": [
+      {{
+        "description": "...",
+        "why_this_fits": "...",
+        "local_secret": "...",
+        "how_to_reach": "..."
+      }}
+    ]
+  }}
+]
+- The array must have exactly {user_prefs.get('days', 3)} elements (one per day).
+- Each day's activities array must match the number of activities in the skeleton.
 """.strip()
 
         if _context_agent:
@@ -154,14 +163,27 @@ Given this itinerary for a {user_prefs.get('traveler_type', 'couple')}
 visiting {user_prefs.get('city', 'India')} for {user_prefs.get('days', 3)} days:
 {json.dumps(skeleton)}
 
-Generate JSON with:
-- trip_title: a vivid 5-8 word title
-- smart_insights: array of 3 practical insights
-- packing_tips: array of 3-5 destination-aware packing tips
+Return ONLY a JSON object with exactly this structure:
+{{
+  "trip_title": "<vivid 5-8 word title capturing the trip's essence>",
+  "smart_insights": [
+    "<practical insight 1 — money-saving tip, local custom, or timing advice>",
+    "<practical insight 2>",
+    "<practical insight 3>"
+  ],
+  "packing_tips": [
+    "<destination-specific packing tip 1>",
+    "<packing tip 2>",
+    "<packing tip 3>",
+    "<packing tip 4>"
+  ]
+}}
 
 STRICT RULES:
-- NEVER change place names or any costs.
-- Return ONLY the JSON object.
+- smart_insights must be EXACTLY 3 strings.
+- packing_tips must be EXACTLY 4 strings.
+- NEVER change place names or any numeric values.
+- Return ONLY the JSON object, no markdown.
 """.strip()
             if _context_agent and context:
                 meta_prompt = _context_agent.build_enriched_prompt(meta_prompt, context)
@@ -246,6 +268,9 @@ STRICT RULES:
                 log.warning(f"Gemini call failed on {model} with {response.status_code} in {elapsed_ms}ms")
 
                 if response.status_code == 429:
+                    wait_s = 2 ** (_attempt + 1)
+                    log.warning(f"Gemini rate limited on {model}, waiting {wait_s}s before fallback")
+                    time.sleep(wait_s)
                     break
                 if response.status_code >= 500:
                     continue
@@ -307,8 +332,28 @@ STRICT RULES:
 
     @staticmethod
     def _merge_polish_updates(itinerary_data: dict, polished_content):
+        # Fix 4: surface non-list responses instead of silently bailing
         if not isinstance(polished_content, list):
-            return
+            if isinstance(polished_content, dict):
+                # Gemini sometimes wraps the array under a key — try all common ones
+                for key in ("itinerary", "days", "updates", "response", "data", "result", "polished", "output"):
+                    candidate = polished_content.get(key)
+                    if isinstance(candidate, list):
+                        log.info(f"_merge_polish_updates: extracted list from dict key '{key}'")
+                        polished_content = candidate
+                        break
+                else:
+                    log.warning(
+                        f"_merge_polish_updates: expected list, got dict with keys "
+                        f"{list(polished_content.keys())}. Polish merge skipped."
+                    )
+                    return
+            else:
+                log.warning(
+                    f"_merge_polish_updates: expected list, got "
+                    f"{type(polished_content).__name__}. Polish merge skipped."
+                )
+                return
 
         for day_index, day in enumerate(itinerary_data.get("itinerary", [])):
             if day_index >= len(polished_content):
@@ -318,10 +363,12 @@ STRICT RULES:
                 if activity_index >= len(updates):
                     continue
                 update = updates[activity_index]
-                activity["description"] = update.get("description", activity.get("description", ""))
-                activity["why_this_fits"] = update.get("why_this_fits", activity.get("why_this_fits", "Perfect for your trip style"))
-                activity["local_secret"] = update.get("local_secret", activity.get("local_secret", "Visit early to avoid crowds"))
-                activity["how_to_reach"] = update.get("how_to_reach", activity.get("how_to_reach", ""))
+                # Fix 2: only write fields Gemini actually returned — never overwrite
+                # with hardcoded generic strings like "Perfect for your trip style"
+                for field in ("description", "why_this_fits", "local_secret", "how_to_reach"):
+                    val = update.get(field)
+                    if val:
+                        activity[field] = val
 
     @staticmethod
     def _fallback_skeleton(itinerary_data: dict):

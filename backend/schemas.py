@@ -2,8 +2,16 @@ from marshmallow import INCLUDE, EXCLUDE, Schema, ValidationError, fields, valid
 
 
 class BaseSchema(Schema):
+    """
+    Base schema for all request payloads.
+
+    unknown = EXCLUDE: unknown fields are silently dropped instead of passed
+    through (INCLUDE) or rejected with a 400 (RAISE).  This prevents unknown
+    fields from leaking into route handlers while remaining non-breaking for
+    existing API clients that send extra fields.
+    """
     class Meta:
-        unknown = INCLUDE
+        unknown = EXCLUDE
 
 
 class DestinationChoiceSchema(BaseSchema):
@@ -29,7 +37,27 @@ class GenerateItinerarySchema(BaseSchema):
     start_date = fields.Str(required=False, allow_none=True)
     travel_month = fields.Str(required=False, allow_none=True)
     interests = fields.List(fields.Str(), load_default=list)
+    children_count = fields.Int(load_default=0, validate=validate.Range(min=0, max=20))
+    senior_count = fields.Int(load_default=0, validate=validate.Range(min=0, max=20))
+    accessibility = fields.Int(load_default=0, validate=validate.Range(min=0, max=3))
+    display_currency = fields.Str(load_default="INR", validate=validate.Length(max=3))
     use_engine = fields.Bool(load_default=True)
+    # Dietary restrictions — e.g. ["vegetarian", "vegan", "halal", "jain", "gluten_free"]
+    # Food-type attractions that explicitly list other-only options are filtered out.
+    dietary_restrictions = fields.List(fields.Str(), load_default=list)
+    # Minimum age of youngest child in group — used to filter out attractions with age limits.
+    children_min_age = fields.Int(load_default=0, validate=validate.Range(min=0, max=17))
+    # Special occasion: "honeymoon", "anniversary", "birthday", "family_reunion", etc.
+    # Surfaces personalised insights and hotel special-request flags in booking plan.
+    special_occasion = fields.Str(required=False, allow_none=True, validate=validate.Length(max=50))
+    # Fitness level of the group: "low", "moderate", "high"
+    # Used to surface warnings about strenuous activities even when senior_count is 0.
+    fitness_level = fields.Str(
+        load_default="moderate",
+        validate=validate.OneOf(["low", "moderate", "high"]),
+    )
+    # from_city_iata: origin city IATA code for outbound flight booking (e.g. "BOM", "DEL")
+    from_city_iata = fields.Str(required=False, allow_none=True, validate=validate.Length(max=3))
 
 
 class SaveTripSchema(BaseSchema):

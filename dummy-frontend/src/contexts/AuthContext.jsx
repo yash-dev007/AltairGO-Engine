@@ -1,76 +1,112 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import {
+  getToken, getAdminToken, setToken, setAdminToken,
+  clearToken, clearAdminToken,
+  login as apiLogin, register as apiRegister, getMe, adminLogin as apiAdminLogin,
+} from '../services/api';
 
 const AuthContext = createContext(null);
 
-const TOKEN_KEY = 'altairgo_admin_token';
-
 export const AuthProvider = ({ children }) => {
-    const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY) || '');
-    const [isAuthenticated, setIsAuthenticated] = useState(!!localStorage.getItem(TOKEN_KEY));
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState('');
+  const [user, setUser] = useState(null);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [loading, setLoading] = useState(true);
 
-    const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5000';
-
-    const login = useCallback(async (adminKey) => {
-        setLoading(true);
-        setError('');
+  // Hydrate on mount
+  useEffect(() => {
+    const hydrate = async () => {
+      const token = getToken();
+      const adminToken = getAdminToken();
+      if (adminToken) {
+        setIsAdmin(true);
+        setIsAuthenticated(true);
+      }
+      if (token) {
         try {
-            const resp = await fetch(`${apiBase}/api/admin/verify-key`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ key: adminKey }),
-            });
-            const data = await resp.json();
-            if (!resp.ok) throw new Error(data.error || 'Authentication failed');
-            localStorage.setItem(TOKEN_KEY, data.token);
-            setToken(data.token);
-            setIsAuthenticated(true);
-            return true;
-        } catch (err) {
-            setError(err.message);
-            return false;
-        } finally {
-            setLoading(false);
+          const me = await getMe();
+          setUser(me);
+          setIsAuthenticated(true);
+        } catch {
+          clearToken();
         }
-    }, [apiBase]);
-
-    const logout = useCallback(() => {
-        localStorage.removeItem(TOKEN_KEY);
-        setToken('');
-        setIsAuthenticated(false);
-    }, []);
-
-    // Auto-validate token on mount
-    useEffect(() => {
-        if (token) {
-            fetch(`${apiBase}/api/admin/stats`, {
-                headers: { Authorization: `Bearer ${token}` },
-            }).then(res => {
-                if (res.status === 401 || res.status === 422) {
-                    logout();
-                }
-            }).catch(() => {});
-        }
-    }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-    const value = {
-        token,
-        isAuthenticated,
-        loading,
-        error,
-        login,
-        logout,
-        apiBase,
+      }
+      setLoading(false);
     };
+    hydrate();
+  }, []);
 
-    return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  // Listen for unauthorized events
+  useEffect(() => {
+    const handler = (e) => {
+      if (e.detail?.admin) {
+        setIsAdmin(false);
+        if (!getToken()) setIsAuthenticated(false);
+      } else {
+        setUser(null);
+        setIsAuthenticated(false);
+      }
+    };
+    window.addEventListener('ag:unauthorized', handler);
+    return () => window.removeEventListener('ag:unauthorized', handler);
+  }, []);
+
+  const login = useCallback(async (email, pw) => {
+    const data = await apiLogin(email, pw);
+    setToken(data.token);
+    if (data.refresh_token) localStorage.setItem('ag_refresh_token', data.refresh_token);
+    setUser(data.user);
+    setIsAuthenticated(true);
+    return data;
+  }, []);
+
+  const register = useCallback(async (name, email, pw) => {
+    const data = await apiRegister(name, email, pw);
+    setToken(data.token);
+    if (data.refresh_token) localStorage.setItem('ag_refresh_token', data.refresh_token);
+    setUser(data.user);
+    setIsAuthenticated(true);
+    return data;
+  }, []);
+
+  const logout = useCallback(() => {
+    clearToken();
+    localStorage.removeItem('ag_refresh_token');
+    setUser(null);
+    setIsAuthenticated(isAdmin); // keep admin session if active
+  }, [isAdmin]);
+
+  const adminLogin = useCallback(async (key) => {
+    const data = await apiAdminLogin(key);
+    setAdminToken(data.token);
+    setIsAdmin(true);
+    setIsAuthenticated(true);
+    return data;
+  }, []);
+
+  const adminLogout = useCallback(() => {
+    clearAdminToken();
+    setIsAdmin(false);
+    if (!getToken()) {
+      setIsAuthenticated(false);
+      setUser(null);
+    }
+  }, []);
+
+  return (
+    <AuthContext.Provider value={{
+      user, isAuthenticated, isAdmin, loading,
+      login, register, logout, adminLogin, adminLogout,
+    }}>
+      {children}
+    </AuthContext.Provider>
+  );
 };
 
 export const useAuth = () => {
-    const ctx = useContext(AuthContext);
-    if (!ctx) throw new Error('useAuth must be used within AuthProvider');
-    return ctx;
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error('useAuth must be used within AuthProvider');
+  return ctx;
 };
 
 export default AuthContext;

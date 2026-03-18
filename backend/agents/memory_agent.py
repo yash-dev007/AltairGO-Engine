@@ -169,7 +169,10 @@ class MemoryAgent:
     ) -> dict:
         """
         Merge learned preferences with explicit request preferences.
-        Explicit preferences always override learned ones.
+        Priority order (highest → lowest):
+          1. Explicit request fields (always win)
+          2. Learned signals (AttractionSignal aggregation)
+          3. UserProfile.preferences (persistent profile JSON)
 
         Args:
             user_id: user whose memory to consult
@@ -181,11 +184,35 @@ class MemoryAgent:
         learned = self.learn_from_signals(user_id)
         merged = dict(base_preferences)
 
+        # ── Layer 1: UserProfile.preferences ─────────────────────────────────
+        # Apply first so learned signals can override profile defaults.
+        if self.db:
+            try:
+                from backend.models import UserProfile
+                profile = (
+                    self.db.query(UserProfile)
+                    .filter(UserProfile.user_id == user_id)
+                    .first()
+                )
+                if profile and profile.preferences:
+                    for key, value in profile.preferences.items():
+                        # Only fill keys not already in the explicit request.
+                        # This lets the request always win over persisted prefs.
+                        if key not in merged or merged.get(key) is None:
+                            merged[key] = value
+                    log.info(
+                        f"MemoryAgent: Merged UserProfile.preferences for user {user_id} "
+                        f"({len(profile.preferences)} keys)."
+                    )
+            except Exception as e:
+                log.warning(f"MemoryAgent: UserProfile fetch failed: {e}")
+
+        # ── Layer 2: Behavioral signal learning ───────────────────────────────
         if learned["signal_count"] < MIN_SIGNALS_THRESHOLD:
-            return merged  # not enough data, return as-is
+            return merged  # not enough signals yet — profile layer is enough
 
         # Inject excluded types (additive — never remove user's explicit choices)
-        existing_excludes = merged.get("excluded_types", [])
+        existing_excludes = merged.get("excluded_types", []) or []
         merged["excluded_types"] = list(
             set(existing_excludes + learned["excluded_types"])
         )

@@ -2,11 +2,15 @@ import sys
 import os
 import json
 import logging
+from dotenv import load_dotenv
 from sqlalchemy import text
+
+# Load .env before anything that reads os.environ (database URL, API keys)
+load_dotenv()
 
 # Add parent directory to path to import database
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from database import SessionLocal
+from backend.database import SessionLocal
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 log = logging.getLogger(__name__)
@@ -1066,6 +1070,811 @@ DESTINATIONS = [
         "crowd": {"8":3,"9":5,"10":6,"14":5,"15":6},
         "connects": ["Srinagar","Gulmarg"],
     },
+
+    # ═══════════════════════════════════════════════════════
+    # MADHYA PRADESH (gaps)
+    # ═══════════════════════════════════════════════════════
+    {
+        "name": "Gwalior",
+        "lat": 26.2183, "lng": 78.1828,
+        "best_months": [10,11,12,1,2,3],
+        "budget": 1, "dur": 2.5,
+        "types": ["solo_male","solo_female","couple","family","group"],
+        "crowd": {"8":2,"9":4,"10":7,"11":8,"14":7,"15":8,"16":7,"17":5},
+        "connects": ["Agra","Orchha","Khajuraho"],
+    },
+    {
+        "name": "Ujjain",
+        "lat": 23.1765, "lng": 75.7885,
+        "best_months": [10,11,12,1,2,3],
+        "budget": 1, "dur": 2.0,
+        "types": ["solo_male","solo_female","couple","family","elderly"],
+        "crowd": {"4":6,"5":8,"6":9,"7":8,"17":7,"18":9,"19":8},
+        "connects": ["Indore","Bhopal","Omkareshwar"],
+    },
+    {
+        "name": "Pachmarhi",
+        "lat": 22.4675, "lng": 78.4347,
+        "best_months": [10,11,12,1,2,3,4,5],
+        "budget": 2, "dur": 3.0,
+        "types": ["solo_male","solo_female","couple","family","group"],
+        "crowd": {"8":3,"9":5,"10":7,"14":6,"15":7,"16":6},
+        "connects": ["Bhopal","Jabalpur"],
+    },
+    {
+        "name": "Mandu",
+        "lat": 22.3407, "lng": 75.3963,
+        "best_months": [10,11,12,1,2,3],
+        "budget": 1, "dur": 2.0,
+        "types": ["solo_male","couple","family","group"],
+        "crowd": {"9":3,"10":6,"11":7,"14":5,"15":6},
+        "connects": ["Indore","Ujjain"],
+    },
+    {
+        "name": "Sanchi",
+        "lat": 23.4793, "lng": 77.7395,
+        "best_months": [10,11,12,1,2,3],
+        "budget": 1, "dur": 1.5,
+        "types": ["solo_male","solo_female","couple","family","group","elderly"],
+        "crowd": {"9":3,"10":6,"11":7,"14":6,"15":7},
+        "connects": ["Bhopal","Orchha"],
+    },
+    {
+        "name": "Pench",
+        "lat": 21.7545, "lng": 79.2961,
+        "best_months": [11,12,1,2,3,4,5,6],
+        "budget": 3, "dur": 3.0,
+        "types": ["couple","family","group"],
+        "crowd": {"6":5,"7":7,"8":8,"14":7,"15":8},
+        "connects": ["Kanha","Nagpur"],
+    },
+    {
+        "name": "Omkareshwar",
+        "lat": 22.2359, "lng": 76.1516,
+        "best_months": [10,11,12,1,2,3],
+        "budget": 1, "dur": 1.5,
+        "types": ["solo_male","solo_female","couple","family","elderly"],
+        "crowd": {"5":7,"6":9,"7":8,"17":8,"18":9},
+        "connects": ["Ujjain","Indore"],
+    },
+    {
+        "name": "Jabalpur",
+        "lat": 23.1815, "lng": 79.9864,
+        "best_months": [10,11,12,1,2,3],
+        "budget": 1, "dur": 2.0,
+        "types": ["solo_male","solo_female","couple","family","group"],
+        "crowd": {"9":3,"10":5,"14":5,"15":6},
+        "connects": ["Pachmarhi","Kanha","Bandhavgarh"],
+    },
+    {
+        "name": "Indore",
+        "lat": 22.7196, "lng": 75.8577,
+        "best_months": [10,11,12,1,2,3],
+        "budget": 1, "dur": 2.0,
+        "types": ["solo_male","solo_female","couple","family","group"],
+        "crowd": {"10":4,"11":6,"14":7,"16":8,"17":8,"18":7},
+        "connects": ["Ujjain","Mandu","Omkareshwar"],
+    },
+
+    # ═══════════════════════════════════════════════════════
+    # UTTAR PRADESH (gaps)
+    # ═══════════════════════════════════════════════════════
+    {
+        "name": "Fatehpur Sikri",
+        "lat": 27.0945, "lng": 77.6611,
+        "best_months": [10,11,12,1,2,3],
+        "budget": 1, "dur": 2.0,
+        "types": ["solo_male","solo_female","couple","family","group","elderly"],
+        "crowd": {"9":4,"10":7,"11":8,"14":7,"15":8,"16":7},
+        "connects": ["Agra","Jaipur"],
+    },
+    {
+        "name": "Vrindavan",
+        "lat": 27.5745, "lng": 77.6968,
+        "best_months": [10,11,12,1,2,3],
+        "budget": 1, "dur": 1.5,
+        "types": ["solo_male","solo_female","couple","family","elderly"],
+        "crowd": {"5":7,"6":8,"7":9,"16":8,"17":9,"18":9},
+        "connects": ["Mathura","Agra"],
+    },
+    {
+        "name": "Chitrakoot",
+        "lat": 25.2043, "lng": 80.8815,
+        "best_months": [10,11,12,1,2,3],
+        "budget": 1, "dur": 2.0,
+        "types": ["solo_male","solo_female","couple","family","elderly"],
+        "crowd": {"6":6,"7":7,"8":6,"16":7,"17":8},
+        "connects": ["Prayagraj","Khajuraho"],
+    },
+
+    # ═══════════════════════════════════════════════════════
+    # UTTARAKHAND (gaps)
+    # ═══════════════════════════════════════════════════════
+    {
+        "name": "Kedarnath",
+        "lat": 30.7352, "lng": 79.0669,
+        "best_months": [5,6,9,10],
+        "budget": 2, "dur": 3.0,
+        "types": ["solo_male","solo_female","couple","family","group","elderly"],
+        "crowd": {"6":5,"7":7,"8":9,"9":8,"16":7},
+        "connects": ["Rishikesh","Badrinath","Chopta"],
+    },
+    {
+        "name": "Badrinath",
+        "lat": 30.7433, "lng": 79.4938,
+        "best_months": [5,6,9,10],
+        "budget": 2, "dur": 2.0,
+        "types": ["solo_male","solo_female","couple","family","elderly"],
+        "crowd": {"7":6,"8":8,"9":9,"14":7},
+        "connects": ["Kedarnath","Rishikesh","Auli"],
+    },
+    {
+        "name": "Valley of Flowers",
+        "lat": 30.7283, "lng": 79.6057,
+        "best_months": [7,8,9],
+        "budget": 1, "dur": 2.0,
+        "types": ["solo_male","solo_female","couple","group"],
+        "crowd": {"7":5,"8":7,"9":8},
+        "connects": ["Badrinath","Auli"],
+    },
+    {
+        "name": "Lansdowne",
+        "lat": 29.8394, "lng": 78.6869,
+        "best_months": [3,4,5,9,10,11,12,1,2],
+        "budget": 1, "dur": 2.0,
+        "types": ["couple","family","elderly"],
+        "crowd": {"9":4,"10":5,"14":5,"15":6},
+        "connects": ["Rishikesh","Corbett"],
+    },
+    {
+        "name": "Mukteshwar",
+        "lat": 29.4682, "lng": 79.6477,
+        "best_months": [3,4,5,9,10,11,12,1,2],
+        "budget": 2, "dur": 2.0,
+        "types": ["couple","solo_female","family"],
+        "crowd": {"9":4,"10":5,"14":4,"15":5},
+        "connects": ["Nainital","Almora"],
+    },
+    {
+        "name": "Almora",
+        "lat": 29.5971, "lng": 79.6591,
+        "best_months": [3,4,5,9,10,11,12,1,2],
+        "budget": 1, "dur": 2.5,
+        "types": ["solo_male","solo_female","couple","family"],
+        "crowd": {"9":3,"10":5,"14":4,"15":5},
+        "connects": ["Nainital","Mukteshwar","Binsar"],
+    },
+    {
+        "name": "Binsar",
+        "lat": 29.7179, "lng": 79.7437,
+        "best_months": [3,4,5,9,10,11,12],
+        "budget": 2, "dur": 2.0,
+        "types": ["couple","solo_female","family"],
+        "crowd": {"8":3,"9":4,"14":4,"15":5},
+        "connects": ["Almora","Nainital"],
+    },
+
+    # ═══════════════════════════════════════════════════════
+    # RAJASTHAN (gaps)
+    # ═══════════════════════════════════════════════════════
+    {
+        "name": "Ajmer",
+        "lat": 26.4499, "lng": 74.6399,
+        "best_months": [10,11,12,1,2,3],
+        "budget": 1, "dur": 1.5,
+        "types": ["solo_male","solo_female","couple","family","elderly"],
+        "crowd": {"6":7,"7":8,"8":7,"16":7,"17":8},
+        "connects": ["Pushkar","Jaipur"],
+    },
+    {
+        "name": "Bundi",
+        "lat": 25.4395, "lng": 75.6381,
+        "best_months": [10,11,12,1,2,3],
+        "budget": 1, "dur": 2.0,
+        "types": ["solo_male","solo_female","couple","group"],
+        "crowd": {"9":3,"10":5,"11":7,"14":5,"15":6},
+        "connects": ["Kota","Chittorgarh","Jaipur"],
+    },
+    {
+        "name": "Mandawa",
+        "lat": 28.0543, "lng": 75.1477,
+        "best_months": [10,11,12,1,2,3],
+        "budget": 1, "dur": 1.5,
+        "types": ["solo_male","solo_female","couple","group"],
+        "crowd": {"9":3,"10":5,"11":6,"14":4,"15":5},
+        "connects": ["Jaipur","Bikaner"],
+    },
+    {
+        "name": "Nathdwara",
+        "lat": 24.9315, "lng": 73.8234,
+        "best_months": [10,11,12,1,2,3],
+        "budget": 1, "dur": 1.0,
+        "types": ["solo_male","solo_female","couple","family","elderly"],
+        "crowd": {"6":7,"7":8,"8":7,"17":8,"18":9},
+        "connects": ["Udaipur","Mount Abu"],
+    },
+    {
+        "name": "Kota",
+        "lat": 25.2138, "lng": 75.8648,
+        "best_months": [10,11,12,1,2,3],
+        "budget": 1, "dur": 1.5,
+        "types": ["solo_male","couple","family"],
+        "crowd": {"9":3,"10":5,"14":5,"15":6},
+        "connects": ["Bundi","Chittorgarh"],
+    },
+
+    # ═══════════════════════════════════════════════════════
+    # TAMIL NADU (gaps)
+    # ═══════════════════════════════════════════════════════
+    {
+        "name": "Thanjavur",
+        "lat": 10.7870, "lng": 79.1378,
+        "best_months": [10,11,12,1,2,3],
+        "budget": 1, "dur": 2.0,
+        "types": ["solo_male","solo_female","couple","family","group","elderly"],
+        "crowd": {"9":4,"10":7,"11":8,"14":7,"15":8},
+        "connects": ["Madurai","Rameswaram","Chennai"],
+    },
+    {
+        "name": "Kanchipuram",
+        "lat": 12.8342, "lng": 79.7036,
+        "best_months": [10,11,12,1,2,3],
+        "budget": 1, "dur": 1.5,
+        "types": ["solo_male","solo_female","couple","family","elderly"],
+        "crowd": {"8":4,"9":6,"10":7,"14":6,"15":7},
+        "connects": ["Chennai","Mahabalipuram","Pondicherry"],
+    },
+    {
+        "name": "Coonoor",
+        "lat": 11.3530, "lng": 76.7959,
+        "best_months": [3,4,5,6,9,10,11,12],
+        "budget": 2, "dur": 2.0,
+        "types": ["couple","family","elderly","solo_female"],
+        "crowd": {"8":3,"9":5,"14":5,"15":6},
+        "connects": ["Ooty","Coimbatore"],
+    },
+    {
+        "name": "Yercaud",
+        "lat": 11.7750, "lng": 78.2100,
+        "best_months": [3,4,5,6,9,10,11,12],
+        "budget": 1, "dur": 2.0,
+        "types": ["couple","family","elderly"],
+        "crowd": {"9":3,"10":4,"14":4,"15":5},
+        "connects": ["Salem","Ooty"],
+    },
+    {
+        "name": "Coimbatore",
+        "lat": 11.0168, "lng": 76.9558,
+        "best_months": [10,11,12,1,2,3],
+        "budget": 1, "dur": 2.0,
+        "types": ["solo_male","solo_female","couple","family","group"],
+        "crowd": {"9":4,"10":6,"14":6,"16":7,"17":7},
+        "connects": ["Ooty","Coonoor","Kodaikanal"],
+    },
+    {
+        "name": "Tiruchirappalli",
+        "lat": 10.7905, "lng": 78.7047,
+        "best_months": [10,11,12,1,2,3],
+        "budget": 1, "dur": 2.0,
+        "types": ["solo_male","solo_female","couple","family","elderly"],
+        "crowd": {"7":5,"8":7,"9":8,"14":7,"15":8},
+        "connects": ["Thanjavur","Madurai"],
+    },
+    {
+        "name": "Vellore",
+        "lat": 12.9165, "lng": 79.1325,
+        "best_months": [10,11,12,1,2,3],
+        "budget": 1, "dur": 1.5,
+        "types": ["solo_male","solo_female","couple","family","group"],
+        "crowd": {"9":4,"10":6,"14":5,"15":6},
+        "connects": ["Chennai","Kanchipuram"],
+    },
+
+    # ═══════════════════════════════════════════════════════
+    # KERALA (gaps)
+    # ═══════════════════════════════════════════════════════
+    {
+        "name": "Thiruvananthapuram",
+        "lat": 8.5241, "lng": 76.9366,
+        "best_months": [10,11,12,1,2,3],
+        "budget": 2, "dur": 2.5,
+        "types": ["solo_male","solo_female","couple","family","group","elderly"],
+        "crowd": {"9":3,"10":5,"14":5,"16":6,"17":6},
+        "connects": ["Kovalam","Varkala","Kanyakumari"],
+    },
+    {
+        "name": "Thrissur",
+        "lat": 10.5276, "lng": 76.2144,
+        "best_months": [10,11,12,1,2,3,4,5],
+        "budget": 1, "dur": 2.0,
+        "types": ["solo_male","solo_female","couple","family","group","elderly"],
+        "crowd": {"8":4,"9":6,"10":7,"14":6,"15":7},
+        "connects": ["Kochi","Munnar"],
+    },
+    {
+        "name": "Bekal",
+        "lat": 12.3893, "lng": 75.0340,
+        "best_months": [10,11,12,1,2,3],
+        "budget": 2, "dur": 2.0,
+        "types": ["couple","family","solo_female","elderly"],
+        "crowd": {"9":3,"10":5,"14":4,"15":5},
+        "connects": ["Kozhikode","Coorg"],
+    },
+    {
+        "name": "Kannur",
+        "lat": 11.8745, "lng": 75.3704,
+        "best_months": [10,11,12,1,2,3],
+        "budget": 1, "dur": 2.0,
+        "types": ["solo_male","solo_female","couple","family"],
+        "crowd": {"9":3,"10":4,"14":4,"15":5},
+        "connects": ["Kozhikode","Bekal"],
+    },
+
+    # ═══════════════════════════════════════════════════════
+    # KARNATAKA (gaps)
+    # ═══════════════════════════════════════════════════════
+    {
+        "name": "Kabini",
+        "lat": 11.9548, "lng": 76.3509,
+        "best_months": [10,11,12,1,2,3,4,5],
+        "budget": 3, "dur": 2.5,
+        "types": ["couple","family","group"],
+        "crowd": {"6":5,"7":7,"8":8,"14":7,"15":8},
+        "connects": ["Mysore","Coorg","Wayanad"],
+    },
+    {
+        "name": "Nagarhole",
+        "lat": 12.0411, "lng": 76.1288,
+        "best_months": [10,11,12,1,2,3,4,5],
+        "budget": 3, "dur": 2.0,
+        "types": ["couple","family","group"],
+        "crowd": {"6":5,"7":7,"8":8,"14":6},
+        "connects": ["Kabini","Mysore","Coorg"],
+    },
+    {
+        "name": "Pattadakal",
+        "lat": 15.9480, "lng": 75.8178,
+        "best_months": [10,11,12,1,2,3],
+        "budget": 1, "dur": 2.0,
+        "types": ["solo_male","solo_female","couple","family","group"],
+        "crowd": {"9":3,"10":6,"11":7,"14":5,"15":6},
+        "connects": ["Badami","Hampi","Aihole"],
+    },
+    {
+        "name": "Shravanabelagola",
+        "lat": 12.8576, "lng": 76.4857,
+        "best_months": [10,11,12,1,2,3],
+        "budget": 1, "dur": 1.5,
+        "types": ["solo_male","solo_female","couple","family","elderly"],
+        "crowd": {"8":4,"9":6,"10":7,"14":5,"15":6},
+        "connects": ["Mysore","Hassan","Belur"],
+    },
+    {
+        "name": "Belur",
+        "lat": 13.1636, "lng": 75.8628,
+        "best_months": [10,11,12,1,2,3],
+        "budget": 1, "dur": 2.0,
+        "types": ["solo_male","solo_female","couple","family","group","elderly"],
+        "crowd": {"9":4,"10":7,"11":8,"14":6,"15":7},
+        "connects": ["Chikmagalur","Hassan","Shravanabelagola"],
+    },
+    {
+        "name": "Dandeli",
+        "lat": 15.2689, "lng": 74.6144,
+        "best_months": [10,11,12,1,2,3,4,5],
+        "budget": 2, "dur": 2.5,
+        "types": ["solo_male","couple","group"],
+        "crowd": {"8":3,"9":5,"14":5,"15":6},
+        "connects": ["Goa","Hubli"],
+    },
+
+    # ═══════════════════════════════════════════════════════
+    # MAHARASHTRA (gaps)
+    # ═══════════════════════════════════════════════════════
+    {
+        "name": "Kolhapur",
+        "lat": 16.7050, "lng": 74.2433,
+        "best_months": [10,11,12,1,2,3],
+        "budget": 1, "dur": 2.0,
+        "types": ["solo_male","solo_female","couple","family","elderly"],
+        "crowd": {"8":4,"9":6,"10":7,"14":6,"15":7},
+        "connects": ["Goa","Pune","Belgaum"],
+    },
+    {
+        "name": "Tadoba",
+        "lat": 20.2029, "lng": 79.3835,
+        "best_months": [11,12,1,2,3,4,5,6],
+        "budget": 3, "dur": 2.5,
+        "types": ["couple","family","group"],
+        "crowd": {"6":5,"7":7,"8":8,"14":7},
+        "connects": ["Nagpur","Pench"],
+    },
+    {
+        "name": "Alibag",
+        "lat": 18.6414, "lng": 72.8722,
+        "best_months": [10,11,12,1,2,3],
+        "budget": 2, "dur": 2.0,
+        "types": ["couple","family","group","solo_male","solo_female"],
+        "crowd": {"9":3,"10":5,"14":6,"15":7,"16":7},
+        "connects": ["Mumbai","Pune"],
+    },
+    {
+        "name": "Tarkarli",
+        "lat": 16.0167, "lng": 73.4667,
+        "best_months": [10,11,12,1,2,3],
+        "budget": 1, "dur": 3.0,
+        "types": ["couple","family","group","solo_male"],
+        "crowd": {"9":3,"10":5,"14":6,"15":7},
+        "connects": ["Goa","Kolhapur"],
+    },
+    {
+        "name": "Nagpur",
+        "lat": 21.1458, "lng": 79.0882,
+        "best_months": [10,11,12,1,2,3],
+        "budget": 1, "dur": 2.0,
+        "types": ["solo_male","solo_female","couple","family","group"],
+        "crowd": {"9":3,"10":5,"14":5,"16":6,"17":6},
+        "connects": ["Tadoba","Pench","Kanha"],
+    },
+    {
+        "name": "Lonar",
+        "lat": 19.9780, "lng": 76.5095,
+        "best_months": [10,11,12,1,2,3],
+        "budget": 1, "dur": 1.5,
+        "types": ["solo_male","solo_female","couple","group"],
+        "crowd": {"9":3,"10":5,"14":4,"15":5},
+        "connects": ["Aurangabad","Nagpur"],
+    },
+    {
+        "name": "Matheran",
+        "lat": 18.9844, "lng": 73.2733,
+        "best_months": [9,10,11,12,1,2,3,4,5],
+        "budget": 2, "dur": 2.0,
+        "types": ["couple","family","elderly","solo_female"],
+        "crowd": {"8":4,"9":6,"10":7,"14":6,"15":7},
+        "connects": ["Mumbai","Pune","Lonavala"],
+    },
+    {
+        "name": "Ratnagiri",
+        "lat": 16.9944, "lng": 73.3000,
+        "best_months": [10,11,12,1,2,3],
+        "budget": 1, "dur": 2.0,
+        "types": ["couple","family","solo_male"],
+        "crowd": {"9":3,"10":4,"14":5,"15":5},
+        "connects": ["Tarkarli","Goa","Mumbai"],
+    },
+
+    # ═══════════════════════════════════════════════════════
+    # GUJARAT (gaps)
+    # ═══════════════════════════════════════════════════════
+    {
+        "name": "Junagadh",
+        "lat": 21.5222, "lng": 70.4579,
+        "best_months": [10,11,12,1,2,3],
+        "budget": 1, "dur": 2.0,
+        "types": ["solo_male","solo_female","couple","family","group"],
+        "crowd": {"8":3,"9":5,"10":6,"14":5,"15":6},
+        "connects": ["Gir National Park","Somnath","Rajkot"],
+    },
+    {
+        "name": "Rajkot",
+        "lat": 22.3039, "lng": 70.8022,
+        "best_months": [10,11,12,1,2,3],
+        "budget": 1, "dur": 1.5,
+        "types": ["solo_male","solo_female","couple","family"],
+        "crowd": {"9":3,"10":4,"14":5,"16":5},
+        "connects": ["Junagadh","Dwarka","Ahmedabad"],
+    },
+    {
+        "name": "Saputara",
+        "lat": 20.5771, "lng": 73.7514,
+        "best_months": [6,7,8,9,10,11,12],
+        "budget": 1, "dur": 2.0,
+        "types": ["couple","family","elderly"],
+        "crowd": {"9":3,"10":5,"14":5,"15":6},
+        "connects": ["Surat","Nashik"],
+    },
+    {
+        "name": "Surat",
+        "lat": 21.1702, "lng": 72.8311,
+        "best_months": [10,11,12,1,2,3],
+        "budget": 1, "dur": 2.0,
+        "types": ["solo_male","solo_female","couple","family","group"],
+        "crowd": {"9":3,"10":5,"14":6,"16":7,"17":7},
+        "connects": ["Ahmedabad","Saputara","Mumbai"],
+    },
+
+    # ═══════════════════════════════════════════════════════
+    # ANDHRA PRADESH (gaps)
+    # ═══════════════════════════════════════════════════════
+    {
+        "name": "Lepakshi",
+        "lat": 13.8027, "lng": 77.6079,
+        "best_months": [10,11,12,1,2,3],
+        "budget": 1, "dur": 2.0,
+        "types": ["solo_male","solo_female","couple","family","group"],
+        "crowd": {"9":3,"10":6,"11":7,"14":5,"15":6},
+        "connects": ["Bangalore","Tirupati"],
+    },
+    {
+        "name": "Vijayawada",
+        "lat": 16.5062, "lng": 80.6480,
+        "best_months": [10,11,12,1,2,3],
+        "budget": 1, "dur": 2.0,
+        "types": ["solo_male","solo_female","couple","family","group"],
+        "crowd": {"8":4,"9":6,"10":7,"14":6,"15":7},
+        "connects": ["Hyderabad","Tirupati","Bhubaneswar"],
+    },
+    {
+        "name": "Horsley Hills",
+        "lat": 13.6587, "lng": 78.3986,
+        "best_months": [3,4,5,9,10,11,12],
+        "budget": 1, "dur": 2.0,
+        "types": ["couple","family","elderly"],
+        "crowd": {"9":3,"10":4,"14":4,"15":5},
+        "connects": ["Tirupati","Bangalore"],
+    },
+
+    # ═══════════════════════════════════════════════════════
+    # TELANGANA (gaps)
+    # ═══════════════════════════════════════════════════════
+    {
+        "name": "Warangal",
+        "lat": 17.9784, "lng": 79.5941,
+        "best_months": [10,11,12,1,2,3],
+        "budget": 1, "dur": 2.0,
+        "types": ["solo_male","solo_female","couple","family","group"],
+        "crowd": {"9":3,"10":6,"11":7,"14":5,"15":6},
+        "connects": ["Hyderabad","Bhubaneswar"],
+    },
+
+    # ═══════════════════════════════════════════════════════
+    # JHARKHAND
+    # ═══════════════════════════════════════════════════════
+    {
+        "name": "Ranchi",
+        "lat": 23.3441, "lng": 85.3096,
+        "best_months": [10,11,12,1,2,3,4],
+        "budget": 1, "dur": 2.5,
+        "types": ["solo_male","solo_female","couple","family","group"],
+        "crowd": {"9":3,"10":5,"14":5,"15":6},
+        "connects": ["Jamshedpur","Bodh Gaya"],
+    },
+    {
+        "name": "Jamshedpur",
+        "lat": 22.8046, "lng": 86.2029,
+        "best_months": [10,11,12,1,2,3],
+        "budget": 1, "dur": 1.5,
+        "types": ["solo_male","solo_female","couple","family"],
+        "crowd": {"9":3,"10":4,"14":5,"16":5},
+        "connects": ["Ranchi","Kolkata"],
+    },
+    {
+        "name": "Deoghar",
+        "lat": 24.4852, "lng": 86.6953,
+        "best_months": [10,11,12,1,2,3],
+        "budget": 1, "dur": 1.5,
+        "types": ["solo_male","solo_female","couple","family","elderly"],
+        "crowd": {"6":7,"7":8,"8":7,"16":7,"17":8},
+        "connects": ["Ranchi","Patna"],
+    },
+
+    # ═══════════════════════════════════════════════════════
+    # CHHATTISGARH
+    # ═══════════════════════════════════════════════════════
+    {
+        "name": "Jagdalpur",
+        "lat": 19.0747, "lng": 82.0205,
+        "best_months": [10,11,12,1,2,3,4],
+        "budget": 1, "dur": 3.0,
+        "types": ["solo_male","solo_female","couple","family","group"],
+        "crowd": {"9":3,"10":5,"14":5,"15":6},
+        "connects": ["Raipur","Visakhapatnam"],
+    },
+    {
+        "name": "Raipur",
+        "lat": 21.2514, "lng": 81.6296,
+        "best_months": [10,11,12,1,2,3],
+        "budget": 1, "dur": 1.5,
+        "types": ["solo_male","solo_female","couple","family","group"],
+        "crowd": {"9":3,"10":4,"14":5,"16":5},
+        "connects": ["Jagdalpur","Nagpur"],
+    },
+
+    # ═══════════════════════════════════════════════════════
+    # ASSAM / NORTHEAST (gaps)
+    # ═══════════════════════════════════════════════════════
+    {
+        "name": "Guwahati",
+        "lat": 26.1445, "lng": 91.7362,
+        "best_months": [10,11,12,1,2,3,4],
+        "budget": 1, "dur": 2.5,
+        "types": ["solo_male","solo_female","couple","family","group"],
+        "crowd": {"9":4,"10":6,"14":6,"15":7,"16":6},
+        "connects": ["Kaziranga","Shillong","Tawang"],
+    },
+    {
+        "name": "Dibrugarh",
+        "lat": 27.4728, "lng": 95.0169,
+        "best_months": [10,11,12,1,2,3,4,5],
+        "budget": 1, "dur": 2.0,
+        "types": ["solo_male","solo_female","couple","family","group"],
+        "crowd": {"9":3,"10":5,"14":5,"15":6},
+        "connects": ["Kaziranga","Majuli","Ziro"],
+    },
+    {
+        "name": "Dawki",
+        "lat": 25.1825, "lng": 92.0270,
+        "best_months": [10,11,12,1,2,3,4,5],
+        "budget": 1, "dur": 2.0,
+        "types": ["solo_male","solo_female","couple","group"],
+        "crowd": {"8":3,"9":5,"10":6,"14":5,"15":6},
+        "connects": ["Shillong","Cherrapunji"],
+    },
+    {
+        "name": "Mawlynnong",
+        "lat": 25.2035, "lng": 91.9067,
+        "best_months": [9,10,11,12,1,2,3,4,5],
+        "budget": 1, "dur": 1.5,
+        "types": ["solo_male","solo_female","couple","family","group"],
+        "crowd": {"9":4,"10":6,"14":5,"15":6},
+        "connects": ["Dawki","Shillong","Cherrapunji"],
+    },
+    {
+        "name": "Kohima",
+        "lat": 25.6751, "lng": 94.1086,
+        "best_months": [10,11,12,1,2,3,4,5],
+        "budget": 1, "dur": 2.5,
+        "types": ["solo_male","solo_female","couple","group"],
+        "crowd": {"9":3,"10":5,"14":5,"15":6},
+        "connects": ["Imphal","Guwahati"],
+    },
+    {
+        "name": "Imphal",
+        "lat": 24.8170, "lng": 93.9368,
+        "best_months": [10,11,12,1,2,3,4,5],
+        "budget": 1, "dur": 2.5,
+        "types": ["solo_male","solo_female","couple","group"],
+        "crowd": {"9":3,"10":5,"14":5,"15":6},
+        "connects": ["Kohima","Guwahati"],
+    },
+    {
+        "name": "Agartala",
+        "lat": 23.8315, "lng": 91.2868,
+        "best_months": [10,11,12,1,2,3,4,5],
+        "budget": 1, "dur": 2.0,
+        "types": ["solo_male","solo_female","couple","family","group"],
+        "crowd": {"9":3,"10":4,"14":4,"15":5},
+        "connects": ["Guwahati","Kolkata"],
+    },
+    {
+        "name": "Aizawl",
+        "lat": 23.7307, "lng": 92.7173,
+        "best_months": [10,11,12,1,2,3,4,5],
+        "budget": 1, "dur": 2.0,
+        "types": ["solo_male","solo_female","couple","group"],
+        "crowd": {"9":3,"10":4,"14":4,"15":5},
+        "connects": ["Imphal","Guwahati"],
+    },
+
+    # ═══════════════════════════════════════════════════════
+    # HIMACHAL PRADESH (gaps)
+    # ═══════════════════════════════════════════════════════
+    {
+        "name": "Tirthan Valley",
+        "lat": 31.6307, "lng": 77.4009,
+        "best_months": [3,4,5,6,9,10,11],
+        "budget": 1, "dur": 3.0,
+        "types": ["solo_male","solo_female","couple","group"],
+        "crowd": {"8":3,"9":5,"14":4,"15":5},
+        "connects": ["Manali","Shimla","Kullu"],
+    },
+    {
+        "name": "Palampur",
+        "lat": 32.1104, "lng": 76.5367,
+        "best_months": [3,4,5,6,9,10,11,12],
+        "budget": 1, "dur": 2.0,
+        "types": ["couple","family","elderly","solo_female"],
+        "crowd": {"9":3,"10":4,"14":4,"15":5},
+        "connects": ["Dharamshala","Bir Billing"],
+    },
+    {
+        "name": "Kinnaur",
+        "lat": 31.5925, "lng": 78.4739,
+        "best_months": [5,6,7,8,9,10],
+        "budget": 2, "dur": 4.0,
+        "types": ["solo_male","solo_female","couple","group"],
+        "crowd": {"8":3,"9":5,"14":4,"15":5},
+        "connects": ["Shimla","Spiti Valley"],
+    },
+    {
+        "name": "Kullu",
+        "lat": 31.9579, "lng": 77.1098,
+        "best_months": [3,4,5,6,9,10,11,12],
+        "budget": 1, "dur": 2.5,
+        "types": ["solo_male","solo_female","couple","family","group"],
+        "crowd": {"9":4,"10":6,"14":6,"15":7},
+        "connects": ["Manali","Tirthan Valley"],
+    },
+
+    # ═══════════════════════════════════════════════════════
+    # PUNJAB / HARYANA / DELHI NCR (gaps)
+    # ═══════════════════════════════════════════════════════
+    {
+        "name": "Ludhiana",
+        "lat": 30.9010, "lng": 75.8573,
+        "best_months": [10,11,12,1,2,3],
+        "budget": 1, "dur": 1.5,
+        "types": ["solo_male","solo_female","couple","family","group"],
+        "crowd": {"10":4,"11":5,"14":5,"16":6},
+        "connects": ["Amritsar","Chandigarh"],
+    },
+    {
+        "name": "Kurukshetra",
+        "lat": 29.9695, "lng": 76.8783,
+        "best_months": [10,11,12,1,2,3],
+        "budget": 1, "dur": 1.5,
+        "types": ["solo_male","solo_female","couple","family","elderly"],
+        "crowd": {"8":4,"9":6,"10":7,"14":6,"15":7},
+        "connects": ["Chandigarh","Delhi"],
+    },
+
+    # ═══════════════════════════════════════════════════════
+    # LAKSHADWEEP
+    # ═══════════════════════════════════════════════════════
+    {
+        "name": "Kavaratti",
+        "lat": 10.5626, "lng": 72.6369,
+        "best_months": [11,12,1,2,3,4,5],
+        "budget": 3, "dur": 4.0,
+        "types": ["couple","family","group"],
+        "crowd": {"9":4,"10":6,"14":6,"15":7},
+        "connects": ["Kochi"],
+    },
+    {
+        "name": "Agatti",
+        "lat": 10.8565, "lng": 72.2017,
+        "best_months": [11,12,1,2,3,4,5],
+        "budget": 3, "dur": 4.0,
+        "types": ["couple","group","solo_male","solo_female"],
+        "crowd": {"9":4,"10":6,"14":5,"15":6},
+        "connects": ["Kavaratti","Kochi"],
+    },
+
+    # ═══════════════════════════════════════════════════════
+    # WEST BENGAL (gaps)
+    # ═══════════════════════════════════════════════════════
+    {
+        "name": "Bishnupur",
+        "lat": 23.0732, "lng": 87.3181,
+        "best_months": [10,11,12,1,2,3],
+        "budget": 1, "dur": 2.0,
+        "types": ["solo_male","solo_female","couple","family","group"],
+        "crowd": {"9":3,"10":6,"11":7,"14":5,"15":6},
+        "connects": ["Kolkata","Shantiniketan"],
+    },
+    {
+        "name": "Shantiniketan",
+        "lat": 23.6793, "lng": 87.6862,
+        "best_months": [10,11,12,1,2,3],
+        "budget": 1, "dur": 2.0,
+        "types": ["solo_male","solo_female","couple","family","group","elderly"],
+        "crowd": {"9":4,"10":6,"11":8,"14":6,"15":7},
+        "connects": ["Kolkata","Bishnupur"],
+    },
+
+    # ═══════════════════════════════════════════════════════
+    # ANDAMAN (gaps)
+    # ═══════════════════════════════════════════════════════
+    {
+        "name": "Baratang",
+        "lat": 12.1786, "lng": 92.7494,
+        "best_months": [11,12,1,2,3,4,5],
+        "budget": 2, "dur": 2.0,
+        "types": ["solo_male","solo_female","couple","group"],
+        "crowd": {"9":3,"10":5,"14":5,"15":6},
+        "connects": ["Port Blair","Diglipur"],
+    },
 ]
 
 
@@ -1073,19 +1882,22 @@ def seed_destinations():
     db = SessionLocal()
     inserted = updated = failed = 0
 
+    # ── H3 Version Compatibility Wrapper (handles v3 and v4) ─────────
     try:
-        try:
-            import h3 as h3lib
-            # H3 Version Compatibility Wrapper (handles v3 and v4)
-            def geo_to_h3_compat(lat, lng, res):
-                if hasattr(h3lib, 'latlng_to_h3'): # v4
-                    return h3lib.latlng_to_h3(lat, lng, res)
-                return h3lib.geo_to_h3(lat, lng, res) # v3
-            H3_AVAILABLE = True
-        except ImportError:
-            H3_AVAILABLE = False
-            log.warning("h3 package not found — h3 indexes will be skipped. Run: pip install h3")
+        import h3 as h3lib
+        def geo_to_h3_compat(lat, lng, res):
+            if hasattr(h3lib, 'latlng_to_cell'):   # h3-py v4
+                return h3lib.latlng_to_cell(lat, lng, res)
+            return h3lib.geo_to_h3(lat, lng, res)  # h3-py v3
+        H3_AVAILABLE = True
+    except ImportError:
+        H3_AVAILABLE = False
+        log.warning("h3 package not found — h3 indexes will be skipped. Run: pip install h3")
 
+    # ── Budget integer → Destination.budget_category string ──────────
+    BUDGET_MAP = {1: "budget", 2: "mid-range", 3: "luxury"}
+
+    try:
         for d in DESTINATIONS:
             try:
                 existing = db.execute(
@@ -1093,13 +1905,20 @@ def seed_destinations():
                     {"name": d["name"]}
                 ).fetchone()
 
-                # Properly serialize lists to JSON strings
-                best_months_json              = json.dumps(d["best_months"])
+                # Serialize JSON fields
+                best_time_months_json         = json.dumps(d["best_months"])
                 compatible_traveler_types_json = json.dumps(d["types"])
-                crowd_json                     = json.dumps(d.get("crowd", {}))
-                connects_json                  = json.dumps(d.get("connects", []))
 
-                # H3 indexes via compat wrapper
+                # crowd_peak_hours is a JSON array of peak-hour integers
+                # (hours where crowd value >= 7 out of 10).
+                # The full hour-by-hour dict is for attractions only.
+                crowd_dict = d.get("crowd", {})
+                crowd_peak_hours_arr = sorted(
+                    int(h) for h, v in crowd_dict.items() if v >= 7
+                )
+                crowd_peak_json = json.dumps(crowd_peak_hours_arr)
+
+                # H3 indexes
                 h3_r7 = geo_to_h3_compat(d["lat"], d["lng"], 7) if H3_AVAILABLE else None
                 h3_r9 = geo_to_h3_compat(d["lat"], d["lng"], 9) if H3_AVAILABLE else None
 
@@ -1107,12 +1926,11 @@ def seed_destinations():
                     "name":                       d["name"],
                     "lat":                        d["lat"],
                     "lng":                        d["lng"],
-                    "best_months":                best_months_json,
-                    "budget_category":            d["budget"],
+                    "best_time_months":           best_time_months_json,
+                    "budget_category":            BUDGET_MAP.get(d["budget"], "mid-range"),
                     "avg_visit_duration_hours":   d.get("dur", 3.0),
-                    "compatible_traveler_types":   compatible_traveler_types_json,
-                    "crowd_level_by_hour":         crowd_json,
-                    "connects_well_with":          connects_json,
+                    "compatible_traveler_types":  compatible_traveler_types_json,
+                    "crowd_peak_hours":           crowd_peak_json,
                     "h3_index_r7":                h3_r7,
                     "h3_index_r9":                h3_r9,
                 }
@@ -1120,52 +1938,48 @@ def seed_destinations():
                 if existing:
                     db.execute(text("""
                         UPDATE destination SET
-                            lat                        = :lat,
-                            lng                        = :lng,
-                            coordinates                = ST_MakePoint(:lng, :lat)::geography,
-                            best_months                = :best_months::jsonb,
-                            budget_category            = :budget_category,
-                            avg_visit_duration_hours   = :avg_visit_duration_hours,
-                            compatible_traveler_types  = :compatible_traveler_types::jsonb,
-                            crowd_level_by_hour        = :crowd_level_by_hour::jsonb,
-                            connects_well_with         = :connects_well_with::jsonb,
-                            h3_index_r7                = :h3_index_r7,
-                            h3_index_r9                = :h3_index_r9
+                            lat                       = :lat,
+                            lng                       = :lng,
+                            coordinates               = ST_MakePoint(:lng, :lat)::geography,
+                            best_time_months          = CAST(:best_time_months AS jsonb),
+                            budget_category           = :budget_category,
+                            avg_visit_duration_hours  = :avg_visit_duration_hours,
+                            compatible_traveler_types = CAST(:compatible_traveler_types AS jsonb),
+                            crowd_peak_hours          = CAST(:crowd_peak_hours AS jsonb),
+                            h3_index_r7               = :h3_index_r7,
+                            h3_index_r9               = :h3_index_r9
                         WHERE id = :id
                     """), {**params, "id": existing.id})
                     log.info(f"  Updated : {d['name']}")
-
                     updated += 1
                 else:
                     db.execute(text("""
                         INSERT INTO destination (
                             name, lat, lng, coordinates,
-                            best_months, budget_category, avg_visit_duration_hours,
-                            compatible_traveler_types, crowd_level_by_hour,
-                            connects_well_with, h3_index_r7, h3_index_r9
+                            best_time_months, budget_category, avg_visit_duration_hours,
+                            compatible_traveler_types, crowd_peak_hours,
+                            h3_index_r7, h3_index_r9
                         ) VALUES (
                             :name, :lat, :lng, ST_MakePoint(:lng, :lat)::geography,
-                            :best_months::jsonb, :budget_category, :avg_visit_duration_hours,
-                            :compatible_traveler_types::jsonb, :crowd_level_by_hour::jsonb,
-                            :connects_well_with::jsonb, :h3_index_r7, :h3_index_r9
+                            CAST(:best_time_months AS jsonb), :budget_category, :avg_visit_duration_hours,
+                            CAST(:compatible_traveler_types AS jsonb), CAST(:crowd_peak_hours AS jsonb),
+                            :h3_index_r7, :h3_index_r9
                         )
                     """), params)
                     log.info(f"  Inserted: {d['name']}")
-
                     inserted += 1
 
             except Exception as row_err:
                 log.error(f"  FAILED  : {d['name']} — {row_err}")
-
+                db.rollback()
                 failed += 1
-                continue   # skip bad row, continue with rest
+                continue
 
         db.commit()
 
     except Exception as e:
         db.rollback()
         log.error(f"Transaction failed: {e}")
-
         raise
     finally:
         db.close()

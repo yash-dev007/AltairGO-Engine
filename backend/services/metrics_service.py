@@ -69,19 +69,22 @@ def set_metric(metric_name: str, value, ttl_seconds: int | None = None):
 
 
 def record_generation_time(seconds: float):
-    """Maintain a rolling average of generation times in Redis (last 50)."""
+    """Maintain a rolling average of generation times in Redis (last 50 samples)."""
     try:
         client = get_metrics_redis()
-        if not client: return
-        
+        if not client:
+            return
+
         list_key = "metrics:gen_times"
         client.lpush(list_key, seconds)
-        client.ltrim(list_key, 0, 49) # Keep 50
-        
+        client.ltrim(list_key, 0, 49)  # Keep last 50 samples
+        # Expire the list after 7 days so stale samples don't persist across restarts
+        client.expire(list_key, 7 * 24 * 60 * 60)
+
         times = [float(t) for t in client.lrange(list_key, 0, -1)]
         if times:
             avg = sum(times) / len(times)
-            client.set("metrics:avg_gen_time", avg)
+            client.set("metrics:avg_gen_time", avg, ex=7 * 24 * 60 * 60)
     except Exception as exc:
         log.warning(f"Failed to record generation time: {exc}")
 

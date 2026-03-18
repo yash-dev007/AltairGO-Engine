@@ -1,0 +1,92 @@
+import structlog
+from flask import Blueprint, jsonify, request
+from flask_jwt_extended import get_jwt_identity, jwt_required
+
+from backend.database import db
+from backend.models import User, UserProfile
+
+profile_bp = Blueprint("profile", __name__)
+log = structlog.get_logger(__name__)
+
+
+@profile_bp.get("/api/user/profile")
+@jwt_required()
+def get_profile():
+    user_id = int(get_jwt_identity())
+    user = db.session.get(User, user_id)
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    profile = db.session.query(UserProfile).filter_by(user_id=user_id).first()
+    return jsonify({
+        "id": user.id,
+        "name": user.name,
+        "email": user.email,
+        "created_at": user.created_at.isoformat() if user.created_at else None,
+        "preferences": profile.preferences if profile else {},
+    }), 200
+
+
+@profile_bp.put("/api/user/profile")
+@jwt_required()
+def update_profile():
+    user_id = int(get_jwt_identity())
+    user = db.session.get(User, user_id)
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    body = request.get_json(silent=True) or {}
+
+    if "name" in body:
+        name = str(body["name"]).strip()
+        if not name:
+            return jsonify({"error": "Name cannot be empty"}), 400
+        user.name = name
+
+    prefs = body.get("preferences")
+    if prefs is not None:
+        if not isinstance(prefs, dict):
+            return jsonify({"error": "preferences must be an object"}), 400
+        profile = db.session.query(UserProfile).filter_by(user_id=user_id).first()
+        if not profile:
+            profile = UserProfile(user_id=user_id, preferences={})
+            db.session.add(profile)
+        existing = dict(profile.preferences or {})
+        existing.update(prefs)
+        profile.preferences = existing
+
+    try:
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        log.error("profile_update_failed", user_id=user_id, error=str(e))
+        return jsonify({"error": "Failed to update profile"}), 500
+
+    return jsonify({"message": "Profile updated"}), 200
+
+
+@profile_bp.delete("/api/user/account")
+@jwt_required()
+def delete_account():
+    """GDPR-compliant account deletion (anonymise, preserve trip refs)."""
+    user_id = int(get_jwt_identity())
+    user = db.session.get(User, user_id)
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    body = request.get_json(silent=True) or {}
+    from werkzeug.security import check_password_hash
+    if not check_password_hash(user.password_hash, body.get("password", "")):
+        return jsonify({"error": "Password confirmation required"}), 403
+
+    try:
+        user.name = "Deleted User"
+        user.email = f"deleted_{user_id}@altairgo.invalid"
+        user.password_hash = ""
+        db.session.commit()
+        log.info("account_deleted", user_id=user_id)
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Failed to delete account"}), 500
+
+    return jsonify({"message": "Account deleted"}), 200

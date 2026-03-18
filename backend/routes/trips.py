@@ -52,6 +52,15 @@ def generate_itinerary():
             "traveler_type": data.get("traveler_type", "couple"),
             "travel_month": data.get("travel_month", "any"),
             "start_date": data.get("start_date"),
+            # Include all user-visible parameters so two requests that differ only
+            # in interests or date_type don't incorrectly share a cached result.
+            "interests": sorted(data.get("interests") or []),
+            "date_type": data.get("date_type", "fixed"),
+            "use_engine": data.get("use_engine", True),
+            # Traveler-specific params that change the filtered pool
+            "dietary_restrictions": sorted(data.get("dietary_restrictions") or []),
+            "accessibility": data.get("accessibility", 0),
+            "children_count": data.get("children_count", 0),
         }
         cached_result = get_cached(cache_prefs)
         if cached_result:
@@ -77,12 +86,19 @@ def generate_itinerary():
         db.session.add(AnalyticsEvent(
             event_type="GenerateItineraryQueued",
             user_id=request_user_id,
+            # Store only metadata (not full itinerary) to keep payload size small
+            # and prevent truncation of the JSON column.
             payload={
-                **data,
-                "use_engine": data.get("use_engine", True),
+                "job_id": job_id,
                 "origin_city": data["start_city"],
                 "selected_destination_names": destination_names,
-                "job_id": job_id,
+                "budget": data["budget"],
+                "duration": data["duration"],
+                "travelers": data.get("travelers", 1),
+                "style": data.get("style", "standard"),
+                "traveler_type": data.get("traveler_type", "couple"),
+                "travel_month": data.get("travel_month", "any"),
+                "use_engine": data.get("use_engine", True),
             },
         ))
         db.session.commit()
@@ -103,7 +119,51 @@ def generate_itinerary():
         }), 500
 
 
+@trips_bp.route("/generate-variants", methods=["POST"])
+@limiter.limit("3 per minute")
+def generate_variants():
+    """
+    Generate three plan variants (relaxed / balanced / intense) for the same
+    trip parameters in one call. Returns all three itineraries together so
+    the traveller can pick the density that suits them.
+    """
+    data, error = load_request_json(GenerateItinerarySchema())
+    if error:
+        return error
+
+    destination_names = _extract_destination_names(data)
+    if not destination_names:
+        return jsonify({"error": "At least one selected destination is required"}), 400
+
+    try:
+        request_user_id = None
+        try:
+            verify_jwt_in_request(optional=True)
+            request_user_id = get_jwt_identity()
+        except Exception:
+            pass
+
+        from backend.services.gemini_service import get_gemini_service as _get_gs
+        orchestrator = TripGenerationOrchestrator(
+            db_session=db.session,
+            gemini_service=GEMINI_SERVICE,
+        )
+        variants = orchestrator.generate_variants(data, request_user_id=request_user_id)
+
+        return jsonify({"variants": variants}), 200
+
+    except Exception as exc:
+        db.session.rollback()
+        log.exception("variants.generation_failed")
+        error_msg = str(exc) if os.getenv("TESTING") == "true" else "Internal server error"
+        return jsonify({
+            "error": error_msg,
+            "request_id": getattr(g, "request_id", None),
+        }), 500
+
+
 @trips_bp.route("/get-itinerary-status/<job_id>", methods=["GET"])
+@limiter.limit("60 per minute")
 def get_itinerary_status(job_id):
     try:
         job = db.session.get(AsyncJob, job_id)

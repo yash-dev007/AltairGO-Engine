@@ -88,10 +88,12 @@ class TokenOptimizer:
         # Compact JSON
         compressed = json.dumps(data, separators=(",", ":"), ensure_ascii=False)
 
+        orig_len = len(json.dumps(itinerary_data))
+        comp_len = len(compressed)
+        pct = ((orig_len - comp_len) / orig_len * 100) if orig_len else 0.0
         log.info(
             f"TokenOptimizer: compressed from "
-            f"{len(json.dumps(itinerary_data))} → {len(compressed)} chars "
-            f"({self._pct_reduction(itinerary_data, compressed):.1f}% reduction)"
+            f"{orig_len} → {comp_len} chars ({pct:.1f}% reduction)"
         )
         return compressed
 
@@ -124,9 +126,17 @@ class TokenOptimizer:
         Returns:
             dict with: original_chars, compressed_chars, char_reduction_pct,
                        estimated_token_reduction_pct
+
+        Fix 7: compute inline (strip + alias + serialize) instead of calling
+        compress_for_gemini(), which would log a second compression event and
+        run the same work twice per generation.
         """
         original = json.dumps(itinerary_data)
-        compressed = self.compress_for_gemini(itinerary_data)
+
+        data = self._strip_fields(deepcopy(itinerary_data))
+        if self.use_key_aliases:
+            data = self._alias_keys(data)
+        compressed = json.dumps(data, separators=(",", ":"), ensure_ascii=False)
 
         orig_chars = len(original)
         comp_chars = len(compressed)
@@ -169,8 +179,8 @@ class TokenOptimizer:
         return obj
 
     @staticmethod
-    def _pct_reduction(original_data: dict, compressed_str: str) -> float:
-        orig_len = len(json.dumps(original_data))
+    def _pct_reduction(orig_len: int, compressed_str: str) -> float:
+        """Compute percentage reduction. Accepts pre-computed orig_len to avoid re-serialization."""
         if orig_len == 0:
             return 0.0
         return ((orig_len - len(compressed_str)) / orig_len) * 100

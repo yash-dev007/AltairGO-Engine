@@ -3,6 +3,8 @@ import os
 import random
 import logging
 from datetime import datetime, timezone
+from dotenv import load_dotenv
+load_dotenv()
 from sqlalchemy import text
 
 # Add parent directory to path to import database
@@ -100,9 +102,6 @@ def sync_hotel_prices(db):
     now = datetime.now(timezone.utc)
     count = 0
     
-    # Clear old cache for simplicity in this MVP script
-    db.query(HotelPrice).delete()
-    
     for d in destinations:
         for tier, ranges in HOTEL_BASE.items():
             # City multiplier (Delhi/Mumbai more expensive than Pushkar)
@@ -112,54 +111,164 @@ def sync_hotel_prices(db):
             if d.name in ["Pushkar", "Hampi", "Gokarna"]: mult = 0.8
             
             tier_names = {"budget": "Budget Hotel", "standard": "Standard Hotel", "luxury": "Luxury Resort"}
-            p = HotelPrice(
-                destination_id=d.id,
-                hotel_name=f"{tier_names.get(tier, tier)} - {d.name}",
-                category=tier,
-                price_per_night_min=int(ranges["min"] * mult * random.uniform(0.9, 1.1)),
-                price_per_night_max=int(ranges["max"] * mult * random.uniform(0.9, 1.1)),
-                partner="booking.com_mock",
-                booking_url=f"https://www.booking.com/searchresults.html?ss={d.name}",
-                last_synced=now
-            )
-            db.add(p)
+            # Upsert: update if exists, insert if not — avoids wiping all data every run
+            existing = db.query(HotelPrice).filter_by(
+                destination_id=d.id, category=tier, partner="booking.com_mock"
+            ).first()
+            price_min = int(ranges["min"] * mult * random.uniform(0.9, 1.1))
+            price_max = int(ranges["max"] * mult * random.uniform(0.9, 1.1))
+            if existing:
+                existing.price_per_night_min = price_min
+                existing.price_per_night_max = price_max
+                existing.last_synced = now
+            else:
+                p = HotelPrice(
+                    destination_id=d.id,
+                    hotel_name=f"{tier_names.get(tier, tier)} - {d.name}",
+                    category=tier,
+                    price_per_night_min=price_min,
+                    price_per_night_max=price_max,
+                    partner="booking.com_mock",
+                    booking_url=f"https://www.booking.com/searchresults.html?ss={d.name}",
+                    last_synced=now
+                )
+                db.add(p)
             count += 1
     
     db.commit()
     log.info(f"Generated {count} real-time hotel price nodes.")
 
 def sync_flight_routes(db):
-    destinations = db.query(Destination).all()
+    """
+    Seed realistic India domestic flight routes with correct IATA codes.
+    Uses distance-based pricing heuristic (short-haul ₹2500-5000, long-haul ₹4000-10000).
+    Upserts to avoid wiping existing data on every run.
+    """
     now = datetime.now(timezone.utc)
     count = 0
-    
-    db.query(FlightRoute).delete()
-    
-    # Just seed a few major routes between major airports to avoid O(N^2) explosion
-    majors = ["Delhi", "Mumbai", "Bangalore", "Jaipur", "Kochi", "Goa"]
-    major_dests = [d for d in destinations if d.name in majors]
-    
-    for origin in major_dests:
-        for dest in major_dests:
-            if origin.id == dest.id: continue
-            
-            # Mock price 3000 to 8000
-            avg_price = random.randint(3000, 8000)
-            
-            r = FlightRoute(
-                origin_iata=origin.name[:3].upper(), # Fake IATA
-                destination_iata=dest.name[:3].upper(),
-                transport_type="flight",
-                avg_one_way_inr=avg_price,
-                duration_minutes=random.randint(60, 180),
-                airlines=["IndiGo", "Vistara"],
-                last_synced=now
-            )
-            db.add(r)
+
+    # Correct IATA codes for Indian airports
+    INDIA_IATA = {
+        "Delhi":       "DEL",
+        "Mumbai":      "BOM",
+        "Bangalore":   "BLR",
+        "Bengaluru":   "BLR",
+        "Hyderabad":   "HYD",
+        "Chennai":     "MAA",
+        "Kolkata":     "CCU",
+        "Kochi":       "COK",
+        "Goa":         "GOI",
+        "Jaipur":      "JAI",
+        "Ahmedabad":   "AMD",
+        "Pune":        "PNQ",
+        "Bhubaneswar": "BBI",
+        "Lucknow":     "LKO",
+        "Varanasi":    "VNS",
+        "Amritsar":    "ATQ",
+        "Srinagar":    "SXR",
+        "Leh":         "IXL",
+        "Guwahati":    "GAU",
+        "Port Blair":  "IXZ",
+        "Agartala":    "IXA",
+        "Dibrugarh":   "DIB",
+        "Imphal":      "IMF",
+        "Mangaluru":   "IXE",
+        "Coimbatore":  "CJB",
+        "Thiruvananthapuram": "TRV",
+        "Vishakhapatnam": "VTZ",
+        "Nagpur":      "NAG",
+        "Indore":      "IDR",
+        "Raipur":      "RPR",
+        "Patna":       "PAT",
+        "Ranchi":      "IXR",
+        "Jammu":       "IXJ",
+        "Chandigarh":  "IXC",
+        "Udaipur":     "UDR",
+        "Jodhpur":     "JDH",
+    }
+
+    # Distance tiers for pricing (approx km bands)
+    # All major India hub pairs + selective regional routes
+    ROUTES = [
+        # (origin_iata, dest_iata, duration_min, airlines)
+        ("DEL", "BOM", 130, ["IndiGo", "Air India", "SpiceJet"]),
+        ("DEL", "BLR", 160, ["IndiGo", "Air India", "Vistara"]),
+        ("DEL", "HYD", 140, ["IndiGo", "Air India"]),
+        ("DEL", "MAA", 160, ["IndiGo", "Air India", "SpiceJet"]),
+        ("DEL", "CCU", 130, ["IndiGo", "Air India"]),
+        ("DEL", "COK", 190, ["IndiGo", "Air India"]),
+        ("DEL", "GOI", 130, ["IndiGo", "SpiceJet"]),
+        ("DEL", "JAI",  55, ["IndiGo", "SpiceJet", "Air India"]),
+        ("DEL", "AMD", 100, ["IndiGo", "SpiceJet"]),
+        ("DEL", "SXR",  75, ["IndiGo", "SpiceJet", "Go First"]),
+        ("DEL", "IXL", 100, ["IndiGo", "SpiceJet"]),
+        ("DEL", "LKO",  60, ["IndiGo", "Air India"]),
+        ("DEL", "VNS",  80, ["IndiGo", "Air India"]),
+        ("DEL", "ATQ",  55, ["IndiGo", "SpiceJet"]),
+        ("DEL", "IXC",  45, ["IndiGo", "SpiceJet"]),
+        ("DEL", "GAU", 160, ["IndiGo", "Air India"]),
+        ("DEL", "IXZ", 230, ["Air India"]),
+        ("BOM", "BLR",  80, ["IndiGo", "Air India", "Vistara"]),
+        ("BOM", "HYD",  85, ["IndiGo", "Vistara"]),
+        ("BOM", "MAA",  90, ["IndiGo", "Air India"]),
+        ("BOM", "COK",  90, ["IndiGo", "Air India"]),
+        ("BOM", "GOI",  60, ["IndiGo", "SpiceJet"]),
+        ("BOM", "JAI", 100, ["IndiGo", "SpiceJet"]),
+        ("BOM", "AMD",  65, ["IndiGo", "SpiceJet"]),
+        ("BOM", "CCU", 160, ["IndiGo", "Air India"]),
+        ("BOM", "VNS", 110, ["IndiGo"]),
+        ("BOM", "PNQ",  50, ["IndiGo", "SpiceJet"]),
+        ("BLR", "HYD",  60, ["IndiGo", "Vistara"]),
+        ("BLR", "MAA",  55, ["IndiGo", "Air India"]),
+        ("BLR", "COK",  70, ["IndiGo", "Air India"]),
+        ("BLR", "GOI",  75, ["IndiGo"]),
+        ("BLR", "CCU", 150, ["IndiGo", "Air India"]),
+        ("BLR", "TRV",  75, ["IndiGo", "Air India"]),
+        ("BLR", "CJB",  50, ["IndiGo"]),
+        ("MAA", "COK",  70, ["IndiGo", "Air India"]),
+        ("MAA", "HYD",  65, ["IndiGo"]),
+        ("MAA", "CCU", 140, ["IndiGo", "Air India"]),
+        ("HYD", "CCU", 120, ["IndiGo", "Air India"]),
+        ("JAI", "UDR",  45, ["IndiGo"]),
+        ("JAI", "JDH",  40, ["IndiGo"]),
+        ("GAU", "IXA",  40, ["IndiGo"]),
+        ("GAU", "IMF",  55, ["IndiGo"]),
+        ("GAU", "DIB",  60, ["IndiGo"]),
+    ]
+
+    def _price_for_duration(dur_min: int) -> int:
+        """Rough distance-based pricing: short < 75min, medium < 130min, long >= 130min."""
+        if dur_min < 75:
+            return random.randint(2200, 4500)
+        if dur_min < 130:
+            return random.randint(3500, 7000)
+        return random.randint(5000, 11000)
+
+    for origin_iata, dest_iata, dur, airlines in ROUTES:
+        for o, d in [(origin_iata, dest_iata), (dest_iata, origin_iata)]:
+            existing = db.query(FlightRoute).filter_by(
+                origin_iata=o, destination_iata=d, transport_type="flight"
+            ).first()
+            price = _price_for_duration(dur)
+            if existing:
+                existing.avg_one_way_inr = price
+                existing.duration_minutes = dur
+                existing.airlines = airlines
+                existing.last_synced = now
+            else:
+                db.add(FlightRoute(
+                    origin_iata=o,
+                    destination_iata=d,
+                    transport_type="flight",
+                    avg_one_way_inr=price,
+                    duration_minutes=dur,
+                    airlines=airlines,
+                    last_synced=now,
+                ))
             count += 1
-    
+
     db.commit()
-    log.info(f"Generated {count} flight route pricing links.")
+    log.info(f"Upserted {count} flight route pricing links.")
 
 def run_sync():
     log.info("Starting Price Synchronization (Stage 4)...")

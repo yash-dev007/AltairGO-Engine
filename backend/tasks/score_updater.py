@@ -56,6 +56,75 @@ def update_scores():
     finally:
         db.close()
 
+
+def update_scores_from_quality():
+    """
+    Secondary scoring pass: adjust popularity_score based on Trip.quality_score.
+    When an attraction appears in many high-quality trips it gets a boost;
+    when it appears in low-quality trips it gets a penalty.
+
+    Blend: existing_score * 0.85 + quality_contribution * 0.15
+    Only runs for attractions that appeared in ≥ 3 scored trips.
+    """
+    db = SessionLocal()
+    updated = skipped = 0
+    MIN_QUALITY_TRIPS = 3
+
+    try:
+        from backend.models import Trip, Attraction
+        trips = db.query(Trip).filter(
+            Trip.quality_score.isnot(None),
+            Trip.itinerary_json.isnot(None),
+        ).all()
+
+        # Build attraction_name → [quality_scores] mapping
+        from collections import defaultdict
+        quality_map: dict = defaultdict(list)
+        for trip in trips:
+            q_score = trip.quality_score
+            if q_score is None:
+                continue
+            try:
+                itin = trip.itinerary_json if isinstance(trip.itinerary_json, dict) else {}
+                for day in itin.get("itinerary", []):
+                    for act in day.get("activities", []):
+                        name = (act.get("name") or act.get("activity") or "").strip().lower()
+                        if name and not act.get("is_break"):
+                            quality_map[name].append(float(q_score))
+            except Exception:
+                continue
+
+        # Update attraction popularity_score
+        attractions = db.query(Attraction).all()
+        for attr in attractions:
+            attr_name = (attr.name or "").strip().lower()
+            scores = quality_map.get(attr_name, [])
+            if len(scores) < MIN_QUALITY_TRIPS:
+                skipped += 1
+                continue
+
+            avg_quality = sum(scores) / len(scores)
+            # quality_score is 0-5 → normalize to 0-100
+            quality_contribution = (avg_quality / 5.0) * 100.0
+            current_score = float(attr.popularity_score or 50)
+            new_score = round(current_score * 0.85 + quality_contribution * 0.15, 2)
+            attr.popularity_score = new_score
+            updated += 1
+
+        db.commit()
+        log.info(
+            f"Quality-score update done: {updated} attractions updated, "
+            f"{skipped} skipped (< {MIN_QUALITY_TRIPS} scored trips)."
+        )
+    except Exception as e:
+        db.rollback()
+        log.error(f"Quality score update failed: {e}")
+        raise
+    finally:
+        db.close()
+
+
 if __name__ == "__main__":
     log.info("Running score update manually...")
     update_scores()
+    update_scores_from_quality()

@@ -8,11 +8,11 @@ from celery import Celery
 from celery.schedules import crontab
 
 TESTING = os.getenv("TESTING") == "true"
+DEV_EAGER = os.getenv("DEV_EAGER", "false").lower() in ("1", "true", "yes")
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
-if TESTING:
-    # Use SQLite in-memory for broker/backend during tests to avoid Redis dependency.
-    # This requires sqlalchemy to be installed (which it is).
+if TESTING or DEV_EAGER:
+    # Use SQLite in-memory for broker/backend — no Redis required for local dev.
     broker_url = "sqla+sqlite:///:memory:"
     result_backend = "db+sqlite:///:memory:"
     celery_app = Celery("altairgo", broker=broker_url, backend=result_backend, include=["backend.celery_tasks"])
@@ -31,13 +31,13 @@ celery_app.conf.update(
     enable_utc=True,
 )
 
-if not TESTING:
+if not TESTING and not DEV_EAGER:
     celery_app.conf.update(
         redbeat_redis_url=REDIS_URL,
         beat_scheduler="redbeat.RedBeatScheduler",
     )
 
-if not TESTING:
+if not TESTING and not DEV_EAGER:
     celery_app.conf.beat_schedule = {
         "ingest-osm-weekly": {
             "task": "backend.celery_tasks.run_osm_ingestion",
@@ -78,6 +78,10 @@ if not TESTING:
         "worker-heartbeat": {
             "task": "backend.celery_tasks.heartbeat",
             "schedule": crontab(minute="*/5"), # Every 5 minutes
+        },
+        "sync-weather-alerts-daily": {
+            "task": "backend.celery_tasks.run_weather_sync",
+            "schedule": crontab(hour=5, minute=30),  # After price sync, before cache warm
         },
     }
 else:

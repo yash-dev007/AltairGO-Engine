@@ -3,6 +3,8 @@ import os
 import json
 import logging
 import math
+from dotenv import load_dotenv
+load_dotenv()
 from sqlalchemy import text
 
 # Add parent directory to path to import database
@@ -72,12 +74,14 @@ def run_scoring():
             # 2. Seasonal Index Calculation
             dest = dest_map.get(attr.destination_id)
             if dest:
-                # Assuming best_months is stored as JSON list in DB
+                # Destination column is best_time_months (not best_months)
+                raw = getattr(dest, 'best_time_months', None)
                 try:
-                    dest_months_arr = json.loads(dest.best_months) if isinstance(dest.best_months, str) else dest.best_months
-                except:
+                    dest_months_arr = json.loads(raw) if isinstance(raw, str) else (raw or [])
+                except (json.JSONDecodeError, TypeError) as e:
+                    log.warning(f"  bad best_time_months for dest {dest.id}: {e}")
                     dest_months_arr = []
-                    
+
                 seasonal = calculate_seasonal_score(dest_months_arr, attr.best_months)
                 attr.seasonal_score = seasonal
                 
@@ -125,13 +129,12 @@ class AttractionScorer:
 
             destination = dest_map.get(attr.destination_id)
             if destination:
+                raw = getattr(destination, 'best_time_months', None)
                 try:
                     destination_months = (
-                        json.loads(destination.best_months)
-                        if isinstance(destination.best_months, str)
-                        else destination.best_months
+                        json.loads(raw) if isinstance(raw, str) else (raw or [])
                     )
-                except Exception:
+                except (json.JSONDecodeError, TypeError):
                     destination_months = []
                 attr.seasonal_score = calculate_seasonal_score(
                     destination_months,

@@ -4,6 +4,8 @@ import json
 import time
 import logging
 import requests
+from dotenv import load_dotenv
+load_dotenv()
 
 # Add parent directory to path to import database
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -125,6 +127,9 @@ DEFAULT_CROWD = {
     "8": 2, "9": 3, "10": 5, "11": 7, "12": 6,
     "14": 8, "15": 9, "16": 8, "17": 7, "18": 5,
 }
+
+# ── Budget category int → string mapping (matches Attraction.budget_category) ─
+BUDGET_MAP = {1: "budget", 2: "mid-range", 3: "luxury"}
 
 # ── Crowd pattern overrides per category ─────────────────────────
 CROWD_OVERRIDES = {
@@ -264,7 +269,7 @@ def ingest_city_pois(city_name: str, city_id: int, lat: float, lng: float,
             "type":                       cat,
             "entry_cost":                 COST_MAP.get((cat, bc), 100),
             "avg_visit_duration_hours":   dur,
-            "budget_category":            bc,
+            "budget_category":            BUDGET_MAP.get(bc, "mid-range"),
             "popularity_score":           pop_score,
             "best_visit_time_hour":       visit_hr,
             "compatible_traveler_types":  TRAVELER_MAP.get(cat, TRAVELER_MAP["general"]),
@@ -348,9 +353,9 @@ def ingest_city_pois(city_name: str, city_id: int, lat: float, lng: float,
                             budget_category          = :budget_category,
                             popularity_score         = :popularity_score,
                             best_visit_time_hour     = :best_visit_time_hour,
-                            compatible_traveler_types = :compatible_traveler_types::jsonb,
-                            best_months              = :best_months::jsonb,
-                            crowd_level_by_hour      = :crowd_level_by_hour::jsonb,
+                            compatible_traveler_types = CAST(:compatible_traveler_types AS jsonb),
+                            best_months              = CAST(:best_months AS jsonb),
+                            crowd_level_by_hour      = CAST(:crowd_level_by_hour AS jsonb),
                             wikidata_id              = :wikidata_id
                         WHERE osm_id = :osm_id
                     """), db_params)
@@ -372,9 +377,9 @@ def ingest_city_pois(city_name: str, city_id: int, lat: float, lng: float,
                             :type, :entry_cost, :rating,
                             :avg_visit_duration_hours, :budget_category,
                             :popularity_score, :best_visit_time_hour,
-                            :compatible_traveler_types::jsonb,
-                            :best_months::jsonb,
-                            :crowd_level_by_hour::jsonb,
+                            CAST(:compatible_traveler_types AS jsonb),
+                            CAST(:best_months AS jsonb),
+                            CAST(:crowd_level_by_hour AS jsonb),
                             :dest_id
                         )
                     """), db_params)

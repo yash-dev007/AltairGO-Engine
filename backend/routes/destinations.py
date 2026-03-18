@@ -1,6 +1,7 @@
 """
 destinations.py — Routes for countries, destinations, destination requests, and budget calculation.
 """
+import os
 
 from flask import Blueprint, request, jsonify
 from backend.database import db
@@ -8,8 +9,33 @@ from backend.models import Country, Destination, Attraction, DestinationRequest
 from backend.request_validation import load_request_json
 from backend.schemas import CalculateBudgetSchema, DestinationRequestSchema
 from backend.extensions import limiter
+from backend.constants import PAGINATION_MAX_PAGE
 
 destinations_bp = Blueprint('destinations', __name__)
+
+# Style cost multipliers — read from env so they can be overridden at deploy time
+# without a code change.  The Settings page can expose these as writable engine config.
+_DEFAULT_MULTIPLIERS = {"budget": 0.7, "standard": 1.0, "luxury": 1.8}
+
+
+def _style_multipliers() -> dict:
+    """
+    Return style multipliers, allowing individual overrides via env vars.
+    e.g. STYLE_MULTIPLIER_LUXURY=2.0 overrides the luxury multiplier.
+    """
+    return {
+        "budget": float(os.getenv("STYLE_MULTIPLIER_BUDGET", "0.7")),
+        "standard": float(os.getenv("STYLE_MULTIPLIER_STANDARD", "1.0")),
+        "luxury": float(os.getenv("STYLE_MULTIPLIER_LUXURY", "1.8")),
+    }
+
+
+def _validate_page(page: int) -> tuple[int, str | None]:
+    """Clamp and validate page number.  Returns (safe_page, error_message_or_None)."""
+    page = max(page, 1)
+    if page > PAGINATION_MAX_PAGE:
+        return page, f"page must be <= {PAGINATION_MAX_PAGE}"
+    return page, None
 
 
 # ── Countries ────────────────────────────────────────────────────
@@ -40,7 +66,11 @@ def list_destinations():
     if max_cost:
         query = query.filter(Destination.estimated_cost_per_day <= max_cost)
 
-    page = max(request.args.get("page", type=int, default=1), 1)
+    raw_page = request.args.get("page", type=int, default=1)
+    page, page_err = _validate_page(raw_page)
+    if page_err:
+        return jsonify({"error": page_err}), 400
+
     page_size = min(request.args.get("page_size", type=int, default=50), 200)
 
     total = query.count()
@@ -63,7 +93,11 @@ def destination_detail(dest_id):
 
     data = _serialize_destination(dest)
     # Include attractions — paginated to prevent OOM on large OSM imports.
-    attr_page = max(request.args.get("attr_page", type=int, default=1), 1)
+    raw_attr_page = request.args.get("attr_page", type=int, default=1)
+    attr_page, page_err = _validate_page(raw_attr_page)
+    if page_err:
+        return jsonify({"error": page_err}), 400
+
     attr_limit = min(request.args.get("attr_limit", type=int, default=50), 200)
     attractions = (
         db.session.query(Attraction)
@@ -82,6 +116,7 @@ def destination_detail(dest_id):
         "entry_cost": a.entry_cost,
         "duration": a.duration,
         "popularity_score": a.popularity_score,
+        "images": a.gallery_images or [],
     } for a in attractions]
 
     return jsonify(data), 200
@@ -90,10 +125,20 @@ def destination_detail(dest_id):
 # ── Destination Request ──────────────────────────────────────────
 @destinations_bp.route('/api/destination-request', methods=['POST'])
 def submit_destination_request():
-    # Validate destination requests so invalid body shapes return field-level errors.
     data, error = load_request_json(DestinationRequestSchema())
     if error:
         return error
+
+    # Prevent duplicate pending requests for the same destination name
+    existing = db.session.query(DestinationRequest).filter_by(
+        name=data["name"],
+        status="pending",
+    ).first()
+    if existing:
+        return jsonify({
+            "message": "A pending request for this destination already exists.",
+            "id": existing.id,
+        }), 200
 
     req = DestinationRequest(
         name=data["name"],
@@ -107,12 +152,8 @@ def submit_destination_request():
 
 
 # ── Budget Calculation ───────────────────────────────────────────
-STYLE_MULTIPLIERS = {"budget": 0.7, "standard": 1.0, "luxury": 1.8}
-
-
 @destinations_bp.route('/calculate-budget', methods=['POST'])
 def calculate_budget():
-    # Validate budget calculation payloads so numeric fields never arrive as invalid strings.
     data, error = load_request_json(CalculateBudgetSchema())
     if error:
         return error
@@ -129,7 +170,7 @@ def calculate_budget():
 
     # Average cost per day across destinations, multiplied by days & travelers
     avg_per_day = total / max(len(selected), 1)
-    multiplier = STYLE_MULTIPLIERS.get(style, 1.0)
+    multiplier = _style_multipliers().get(style, 1.0)
     estimated_budget = int(avg_per_day * duration * travelers * multiplier)
 
     return jsonify({"estimated_budget": estimated_budget}), 200

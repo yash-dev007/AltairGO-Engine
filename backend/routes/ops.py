@@ -1,6 +1,7 @@
 from flask import Blueprint, request, jsonify, current_app
 from backend.utils.auth import require_admin
 from backend.celery_config import celery_app
+from backend.constants import ALLOWED_ENGINE_CONFIG_KEYS
 from backend.services.metrics_service import get_metric
 from backend.database import db
 from backend.models import EngineSetting
@@ -19,6 +20,7 @@ VALID_JOBS = {
     "cache_warm": "backend.celery_tasks.run_cache_warm",
     "affiliate_health": "backend.celery_tasks.run_affiliate_health",
     "quality_scoring": "backend.celery_tasks.run_quality_scoring",
+    "weather_sync": "backend.celery_tasks.run_weather_sync",
     "heartbeat": "backend.celery_tasks.heartbeat",
 }
 
@@ -100,6 +102,14 @@ def trigger_agent():
 def engine_config():
     if request.method == "POST":
         data = request.json or {}
+        # Only allow whitelisted keys to prevent arbitrary config injection
+        rejected_keys = [k for k in data if k not in ALLOWED_ENGINE_CONFIG_KEYS]
+        if rejected_keys:
+            return jsonify({
+                "error": f"Unknown config key(s): {rejected_keys}. "
+                         f"Allowed: {sorted(ALLOWED_ENGINE_CONFIG_KEYS)}"
+            }), 400
+
         for key, value in data.items():
             setting = db.session.query(EngineSetting).filter_by(key=key).first()
             if setting:
@@ -108,6 +118,7 @@ def engine_config():
                 setting = EngineSetting(key=key, value=str(value))
                 db.session.add(setting)
         db.session.commit()
+        log.info("ops.engine_config_updated", keys=list(data.keys()))
         return jsonify({"message": "Configuration updated"}), 200
 
     # GET
@@ -115,15 +126,37 @@ def engine_config():
     config = {s.key: s.value for s in settings}
     
     # Defaults in case DB is empty
-    if "VALIDATION_STRICT" not in config: config["VALIDATION_STRICT"] = "false"
-    if "GEMINI_MODEL" not in config: config["GEMINI_MODEL"] = "gemini-2.0-flash"
-    if "THEME_THRESHOLD" not in config: config["THEME_THRESHOLD"] = "0.20"
+    defaults = {
+        "VALIDATION_STRICT":             "false",
+        "GEMINI_MODEL":                  "gemini-2.0-flash",
+        "THEME_THRESHOLD":               "0.20",
+        "MAX_ATTRACTIONS_PER_GENERATION": "500",
+        "POPULARITY_HARD_FLOOR":         "25",
+        "POPULARITY_SOFT_FLOOR":         "10",
+        "SEASONAL_SCORE_GATE":           "40",
+        "INTERESTS_CATEGORY_MULTIPLIER": "2",
+        "AVG_URBAN_SPEED_KMH":           "15",
+        "MAX_ACTIVITIES_PER_DAY":        "6",
+    }
+    for k, v in defaults.items():
+        if k not in config:
+            config[k] = v
 
     # Convert types
     config["VALIDATION_STRICT"] = config["VALIDATION_STRICT"].lower() == "true"
-    try:
-        config["THEME_THRESHOLD"] = float(config["THEME_THRESHOLD"])
-    except ValueError:
-        config["THEME_THRESHOLD"] = 0.20
+    for float_key in ("THEME_THRESHOLD",):
+        try:
+            config[float_key] = float(config[float_key])
+        except (ValueError, KeyError):
+            config[float_key] = float(defaults[float_key])
+    for int_key in (
+        "MAX_ATTRACTIONS_PER_GENERATION", "POPULARITY_HARD_FLOOR", "POPULARITY_SOFT_FLOOR",
+        "SEASONAL_SCORE_GATE", "INTERESTS_CATEGORY_MULTIPLIER", "AVG_URBAN_SPEED_KMH",
+        "MAX_ACTIVITIES_PER_DAY",
+    ):
+        try:
+            config[int_key] = int(config[int_key])
+        except (ValueError, KeyError):
+            config[int_key] = int(defaults[int_key])
 
     return jsonify(config), 200

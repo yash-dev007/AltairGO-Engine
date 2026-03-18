@@ -4,6 +4,8 @@ import json
 import time
 import logging
 import requests
+from dotenv import load_dotenv
+load_dotenv()
 from sqlalchemy import text
 
 # Add parent directory to path to import database
@@ -150,7 +152,15 @@ def get_google_place_details(place_id: str):
 
 # ── Main Enrichment Pipeline (Waterfall Pattern) ─────────────────────
 
-def run_enrichment():
+def run_enrichment(batch_size: int = 200):
+    """
+    Enrich attractions via Wikidata → Wikipedia → Google Places waterfall.
+
+    Args:
+        batch_size: How many attractions to process per run (default 200).
+                    Set to 0 to process all unenriched attractions in one shot.
+                    Pass --all from CLI to process everything.
+    """
     log.info("Starting POI enrichment (Wikidata → Wikipedia → Google Places)...")
 
     if not GOOGLE_API_KEY:
@@ -159,11 +169,12 @@ def run_enrichment():
     db = SessionLocal()
 
     try:
-        # Find attractions without google rating or images
-        # Limit to 50 per run to avoid blowing up API limits
-        attractions = db.query(Attraction).filter(
+        q = db.query(Attraction).filter(
             (Attraction.google_rating == None) | (Attraction.gallery_images == None)
-        ).limit(50).all()
+        )
+        if batch_size > 0:
+            q = q.limit(batch_size)
+        attractions = q.all()
 
         log.info(f"Found {len(attractions)} attractions requiring enrichment.")
 
@@ -260,4 +271,11 @@ def run_enrichment():
         db.close()
 
 if __name__ == "__main__":
-    run_enrichment()
+    import argparse
+    parser = argparse.ArgumentParser(description="Enrich attraction POIs via Wikidata/Wikipedia/Google.")
+    parser.add_argument("--all", dest="process_all", action="store_true",
+                        help="Process all unenriched attractions (no batch limit).")
+    parser.add_argument("--batch", type=int, default=200,
+                        help="Max attractions to process per run (default: 200).")
+    args = parser.parse_args()
+    run_enrichment(batch_size=0 if args.process_all else args.batch)

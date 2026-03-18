@@ -101,8 +101,9 @@ def create_app(test_config=None):
     CORS(app, origins=_parse_allowed_origins(app.config.get("ALLOWED_ORIGINS")))
 
     database.configure_database(app, app.config["SQLALCHEMY_DATABASE_URI"])
-    celery_app.conf.task_always_eager = bool(app.config.get("TESTING"))
-    celery_app.conf.task_eager_propagates = bool(app.config.get("TESTING"))
+    _eager = bool(app.config.get("TESTING")) or os.getenv("DEV_EAGER", "false").lower() in ("1", "true", "yes")
+    celery_app.conf.task_always_eager = _eager
+    celery_app.conf.task_eager_propagates = _eager
 
     @app.before_request
     def bind_request_context():
@@ -132,6 +133,15 @@ def create_app(test_config=None):
     from backend.routes.dashboard import dashboard_bp
     from backend.routes.signals import signals_bp
     from backend.routes.ops import ops_bp
+    from backend.routes.bookings import bookings_bp
+    from backend.routes.expenses import expenses_bp
+    from backend.routes.discover import discover_bp
+    from backend.routes.trip_tools import trip_tools_bp
+    from backend.routes.trip_editor import trip_editor_bp
+    from backend.routes.profile import profile_bp
+    from backend.routes.sharing import sharing_bp
+    from backend.routes.search import search_bp
+    from backend.routes.blogs import blogs_bp
 
     app.register_blueprint(trips_bp)
     app.register_blueprint(admin_bp)
@@ -140,6 +150,15 @@ def create_app(test_config=None):
     app.register_blueprint(dashboard_bp)
     app.register_blueprint(signals_bp)
     app.register_blueprint(ops_bp)
+    app.register_blueprint(bookings_bp)
+    app.register_blueprint(expenses_bp)
+    app.register_blueprint(discover_bp)
+    app.register_blueprint(trip_tools_bp)
+    app.register_blueprint(trip_editor_bp)
+    app.register_blueprint(profile_bp)
+    app.register_blueprint(sharing_bp)
+    app.register_blueprint(search_bp)
+    app.register_blueprint(blogs_bp)
 
     limiter.init_app(app)
     JWTManager(app)

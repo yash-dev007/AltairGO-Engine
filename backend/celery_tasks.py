@@ -78,11 +78,17 @@ def run_price_sync():
 
 @celery_app.task(name="backend.celery_tasks.run_score_update")
 def run_score_update():
-    """Behavioral score update from AttractionSignal data."""
+    """Behavioral score update from AttractionSignal data + quality feedback loop."""
     log.info("Celery: Starting behavioral score update...")
-    from backend.tasks.score_updater import update_scores
+    from backend.tasks.score_updater import update_scores, update_scores_from_quality
 
     result = _run_and_record("score_update", update_scores)
+    # Secondary pass: blend Trip.quality_score into attraction popularity_score.
+    # Runs after behavioral update so both signals compound correctly.
+    try:
+        update_scores_from_quality()
+    except Exception as exc:
+        log.warning(f"Quality score update failed (non-fatal): {exc}")
     log.info("Celery: Behavioral score update complete.")
     return result
 
@@ -143,6 +149,17 @@ def run_quality_scoring():
         session.close()
 
 
+@celery_app.task(name="backend.celery_tasks.run_weather_sync")
+def run_weather_sync():
+    """Sync weather alerts for all active destinations from a weather API."""
+    log.info("Celery: Starting weather sync...")
+    from backend.tasks.weather_sync import sync_weather_alerts
+
+    result = _run_and_record("weather_sync", sync_weather_alerts)
+    log.info("Celery: Weather sync complete.")
+    return result
+
+
 @celery_app.task(name="backend.celery_tasks.generate_itinerary_job")
 def generate_itinerary_job(job_id: str):
     """Generate an itinerary asynchronously so request threads return immediately."""
@@ -156,13 +173,14 @@ def generate_itinerary_job(job_id: str):
         session.commit()
 
         payload = job.payload or {}
+        destination_names = sorted(
+            destination["name"]
+            for destination in (payload.get("selected_destinations") or [])
+            if destination.get("name")
+        )
         cache_prefs = {
             "origin_city": payload["start_city"],
-            "destination_names": sorted(
-                destination["name"]
-                for destination in (payload.get("selected_destinations") or [])
-                if destination.get("name")
-            ),
+            "destination_names": destination_names,
             "budget": payload["budget"],
             "duration": payload["duration"],
             "travelers": payload.get("travelers", 1),
@@ -170,6 +188,14 @@ def generate_itinerary_job(job_id: str):
             "traveler_type": payload.get("traveler_type", "solo"),
             "travel_month": payload.get("travel_month", "any"),
             "start_date": payload.get("start_date"),
+            # Must match cache_prefs in routes/trips.py — all user-visible params
+            "interests": sorted(payload.get("interests") or []),
+            "date_type": payload.get("date_type", "fixed"),
+            "use_engine": payload.get("use_engine", True),
+            # Traveler-specific params that change the filtered pool
+            "dietary_restrictions": sorted(payload.get("dietary_restrictions") or []),
+            "accessibility": payload.get("accessibility", 0),
+            "children_count": payload.get("children_count", 0),
         }
         cached_result = get_cached(cache_prefs)
         if cached_result:
@@ -196,11 +222,17 @@ def generate_itinerary_job(job_id: str):
         session.add(AnalyticsEvent(
             event_type="GenerateItinerary",
             user_id=job.user_id,
+            # Store only metadata to keep payload size manageable
             payload={
-                **payload,
                 "job_id": job_id,
                 "origin_city": payload["start_city"],
                 "selected_destination_names": cache_prefs["destination_names"],
+                "budget": payload["budget"],
+                "duration": payload["duration"],
+                "travelers": payload.get("travelers", 1),
+                "style": payload.get("style", "standard"),
+                "traveler_type": payload.get("traveler_type", "solo"),
+                "travel_month": payload.get("travel_month", "any"),
             },
         ))
         job.status = "completed"
