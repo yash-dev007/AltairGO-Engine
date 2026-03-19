@@ -1,4 +1,3 @@
-import re
 from flask import Blueprint, request, jsonify, current_app
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_jwt_extended import (
@@ -18,11 +17,17 @@ log = structlog.get_logger(__name__)
 
 _LOCKOUT_MAX_ATTEMPTS = 5
 _LOCKOUT_WINDOW = 900  # 15 minutes
+_redis_pool = {}  # keyed by REDIS_URL → ConnectionPool
 
 
 def _get_redis():
     try:
-        return redis.from_url(current_app.config.get("REDIS_URL", ""), decode_responses=True)
+        url = current_app.config.get("REDIS_URL", "")
+        if not url:
+            return None
+        if url not in _redis_pool:
+            _redis_pool[url] = redis.ConnectionPool.from_url(url)
+        return redis.Redis(connection_pool=_redis_pool[url], decode_responses=True)
     except Exception:
         return None
 
@@ -71,9 +76,9 @@ def register():
         if error:
             return error
 
+        # Email format is already validated by RegisterSchema (fields.Email).
+        # A second manual regex here would be redundant and breaks modern TLDs > 4 chars.
         email = data['email'].lower()
-        if not re.match(r"^[\w\.-]+@([\w-]+\.)+[\w-]{2,4}$", email):
-            return jsonify({"error": "Invalid email format"}), 400
 
         if User.query.filter_by(email=email).first():
             return jsonify({"error": "User already exists"}), 409
@@ -106,37 +111,42 @@ def register():
 @auth_bp.route('/login', methods=['POST'])
 @limiter.limit("10 per minute")
 def login():
-    data, error = load_request_json(LoginSchema())
-    if error:
-        return error
+    try:
+        data, error = load_request_json(LoginSchema())
+        if error:
+            return error
 
-    email = data['email'].lower()
+        email = data['email'].lower()
 
-    if _check_lockout(email):
-        log.warning("login_locked_out", email=email)
+        if _check_lockout(email):
+            log.warning("login_locked_out", email=email)
+            return jsonify({
+                "error": "Too many failed attempts. Account locked for 15 minutes."
+            }), 429
+
+        user = User.query.filter_by(email=email).first()
+        if not user or not check_password_hash(user.password_hash, data['password']):
+            _record_failed_login(email)
+            log.warning("login_failed", email=email)
+            return jsonify({"error": "Invalid credentials"}), 401
+
+        _clear_failed_logins(email)
+        access_token = create_access_token(identity=str(user.id))
+        refresh_token = create_refresh_token(identity=str(user.id))
         return jsonify({
-            "error": "Too many failed attempts. Account locked for 15 minutes."
-        }), 429
-
-    user = User.query.filter_by(email=email).first()
-    if not user or not check_password_hash(user.password_hash, data['password']):
-        _record_failed_login(email)
-        log.warning("login_failed", email=email)
-        return jsonify({"error": "Invalid credentials"}), 401
-
-    _clear_failed_logins(email)
-    access_token = create_access_token(identity=str(user.id))
-    refresh_token = create_refresh_token(identity=str(user.id))
-    return jsonify({
-        "message": "Login successful",
-        "token": access_token,
-        "refresh_token": refresh_token,
-        "user": {
-            "id": user.id,
-            "name": user.name,
-            "email": user.email
-        }
-    }), 200
+            "message": "Login successful",
+            "token": access_token,
+            "refresh_token": refresh_token,
+            "user": {
+                "id": user.id,
+                "name": user.name,
+                "email": user.email
+            }
+        }), 200
+    except Exception as e:
+        db.session.rollback()
+        log.exception("login_failed_unexpected", error=str(e))
+        return jsonify({"error": "Internal server error"}), 500
 
 
 @auth_bp.route('/refresh', methods=['POST'])

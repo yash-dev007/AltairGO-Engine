@@ -1899,47 +1899,56 @@ def seed_destinations():
 
     try:
         for d in DESTINATIONS:
+            existing = db.execute(
+                text("SELECT id FROM destination WHERE name = :name"),
+                {"name": d["name"]}
+            ).fetchone()
+
+            # Serialize JSON fields
+            best_time_months_json         = json.dumps(d["best_months"])
+            compatible_traveler_types_json = json.dumps(d["types"])
+
+            # crowd_peak_hours is a JSON array of peak-hour integers
+            # (hours where crowd value >= 7 out of 10).
+            # The full hour-by-hour dict is for attractions only.
+            crowd_dict = d.get("crowd", {})
+            crowd_peak_hours_arr = sorted(
+                int(h) for h, v in crowd_dict.items() if v >= 7
+            )
+            crowd_peak_json = json.dumps(crowd_peak_hours_arr)
+
+            # H3 indexes
+            h3_r7 = geo_to_h3_compat(d["lat"], d["lng"], 7) if H3_AVAILABLE else None
+            h3_r9 = geo_to_h3_compat(d["lat"], d["lng"], 9) if H3_AVAILABLE else None
+
+            slug = d["name"].lower().replace(" ", "-").replace("&", "and")
+
+            params = {
+                "name":                       d["name"],
+                "slug":                       slug,
+                "lat":                        d["lat"],
+                "lng":                        d["lng"],
+                "best_time_months":           best_time_months_json,
+                "budget_category":            BUDGET_MAP.get(d["budget"], "mid-range"),
+                "avg_visit_duration_hours":   d.get("dur", 3.0),
+                "compatible_traveler_types":  compatible_traveler_types_json,
+                "crowd_peak_hours":           crowd_peak_json,
+                "h3_index_r7":                h3_r7,
+                "h3_index_r9":                h3_r9,
+            }
+
+            # Bug fix: use SAVEPOINT so a single failing row doesn't roll back
+            # all previously successful rows in the same transaction.
+            db.execute(text("SAVEPOINT sp_dest"))
             try:
-                existing = db.execute(
-                    text("SELECT id FROM destination WHERE name = :name"),
-                    {"name": d["name"]}
-                ).fetchone()
-
-                # Serialize JSON fields
-                best_time_months_json         = json.dumps(d["best_months"])
-                compatible_traveler_types_json = json.dumps(d["types"])
-
-                # crowd_peak_hours is a JSON array of peak-hour integers
-                # (hours where crowd value >= 7 out of 10).
-                # The full hour-by-hour dict is for attractions only.
-                crowd_dict = d.get("crowd", {})
-                crowd_peak_hours_arr = sorted(
-                    int(h) for h, v in crowd_dict.items() if v >= 7
-                )
-                crowd_peak_json = json.dumps(crowd_peak_hours_arr)
-
-                # H3 indexes
-                h3_r7 = geo_to_h3_compat(d["lat"], d["lng"], 7) if H3_AVAILABLE else None
-                h3_r9 = geo_to_h3_compat(d["lat"], d["lng"], 9) if H3_AVAILABLE else None
-
-                params = {
-                    "name":                       d["name"],
-                    "lat":                        d["lat"],
-                    "lng":                        d["lng"],
-                    "best_time_months":           best_time_months_json,
-                    "budget_category":            BUDGET_MAP.get(d["budget"], "mid-range"),
-                    "avg_visit_duration_hours":   d.get("dur", 3.0),
-                    "compatible_traveler_types":  compatible_traveler_types_json,
-                    "crowd_peak_hours":           crowd_peak_json,
-                    "h3_index_r7":                h3_r7,
-                    "h3_index_r9":                h3_r9,
-                }
-
                 if existing:
                     db.execute(text("""
                         UPDATE destination SET
+                            slug                      = :slug,
                             lat                       = :lat,
                             lng                       = :lng,
+                            latitude                  = :lat,
+                            longitude                 = :lng,
                             coordinates               = ST_MakePoint(:lng, :lat)::geography,
                             best_time_months          = CAST(:best_time_months AS jsonb),
                             budget_category           = :budget_category,
@@ -1947,7 +1956,8 @@ def seed_destinations():
                             compatible_traveler_types = CAST(:compatible_traveler_types AS jsonb),
                             crowd_peak_hours          = CAST(:crowd_peak_hours AS jsonb),
                             h3_index_r7               = :h3_index_r7,
-                            h3_index_r9               = :h3_index_r9
+                            h3_index_r9               = :h3_index_r9,
+                            updated_at                = NOW()
                         WHERE id = :id
                     """), {**params, "id": existing.id})
                     log.info(f"  Updated : {d['name']}")
@@ -1955,23 +1965,23 @@ def seed_destinations():
                 else:
                     db.execute(text("""
                         INSERT INTO destination (
-                            name, lat, lng, coordinates,
+                            name, slug, lat, lng, latitude, longitude, coordinates,
                             best_time_months, budget_category, avg_visit_duration_hours,
                             compatible_traveler_types, crowd_peak_hours,
-                            h3_index_r7, h3_index_r9
+                            h3_index_r7, h3_index_r9, popularity_score
                         ) VALUES (
-                            :name, :lat, :lng, ST_MakePoint(:lng, :lat)::geography,
+                            :name, :slug, :lat, :lng, :lat, :lng, ST_MakePoint(:lng, :lat)::geography,
                             CAST(:best_time_months AS jsonb), :budget_category, :avg_visit_duration_hours,
                             CAST(:compatible_traveler_types AS jsonb), CAST(:crowd_peak_hours AS jsonb),
-                            :h3_index_r7, :h3_index_r9
+                            :h3_index_r7, :h3_index_r9, 50
                         )
                     """), params)
                     log.info(f"  Inserted: {d['name']}")
                     inserted += 1
-
+                db.execute(text("RELEASE SAVEPOINT sp_dest"))
             except Exception as row_err:
+                db.execute(text("ROLLBACK TO SAVEPOINT sp_dest"))
                 log.error(f"  FAILED  : {d['name']} — {row_err}")
-                db.rollback()
                 failed += 1
                 continue
 

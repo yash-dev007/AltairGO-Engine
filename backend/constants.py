@@ -62,6 +62,9 @@ TTL_GEN_TIMES_SEC = 7 * 24 * 3600  # 7 d — rolling generation-time sample wind
 PAGINATION_MAX_PAGE = 100_000       # Reject page numbers above this to prevent DoS
 PAGINATION_MAX_PAGE_SIZE = 200      # Hard cap on page_size in all list endpoints
 
+# ── Hotel occupancy ───────────────────────────────────────────────────
+OCCUPANCY_PER_ROOM = 2              # Assumed travelers per hotel room for cost estimation
+
 # ── Group discounts (INR; applied to activities budget) ───────────────
 GROUP_DISCOUNT_THRESHOLD_SM = 5   # 5–9 travelers: 10% off activity costs
 GROUP_DISCOUNT_THRESHOLD_LG = 10  # 10+ travelers: 15% off activity costs

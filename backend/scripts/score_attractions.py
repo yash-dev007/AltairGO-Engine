@@ -34,6 +34,30 @@ def calculate_seasonal_score(destination_months, attraction_months):
         
     return scores
 
+def _calculate_popularity_score(attr) -> float:
+    """
+    Popularity score 0–100:
+      - Base 30 (OSM ingestion floor)
+      - Google rating bonus: up to 25 pts for ratings ≥ 4.0
+      - Review-count bonus: up to 45 pts (log-scaled; ~10k reviews = max)
+      - Wikidata presence: +15 pts
+    Total before cap: up to 115 → clamped to 100 via min().
+    """
+    google_bonus = 0.0
+    if attr.google_rating and attr.google_rating >= 4.0:
+        google_bonus = (attr.google_rating - 4.0) * 25
+
+    review_bonus = 0.0
+    if attr.review_count and attr.review_count > 0:
+        review_bonus = min(45.0, math.log10(attr.review_count) * 11)
+
+    score = 30.0 + google_bonus + review_bonus
+    if attr.wikidata_id:
+        score += 15.0
+
+    return min(100.0, score)
+
+
 def run_scoring():
     log.info("Starting POI Intelligence Scoring (Stage 3)...")
     db = SessionLocal()
@@ -47,29 +71,7 @@ def run_scoring():
         
         updated_count = 0
         for attr in attractions:
-            # 1. Popularity Score Recalculation
-            # Base score from OSM ingestion is 30.
-            # We bump this up with Google Rating and Reviews.
-            google_bonus = 0
-            if attr.google_rating:
-                # Up to 25 points for rating if > 4.0
-                if attr.google_rating >= 4.0:
-                    google_bonus += (attr.google_rating - 4.0) * 25
-            
-            review_bonus = 0
-            if attr.review_count:
-                # Logarithmic scale up to 45 points (maxing out around 10k reviews)
-                if attr.review_count > 0:
-                    review_bonus = min(45, math.log10(attr.review_count) * 11)
-                    
-            # 30 (OSM base) + 25 (Rating) + 45 (Reviews) = 100 max
-            final_popularity = 30 + google_bonus + review_bonus
-            
-            # Additional bonus for Wikipedia reference
-            if attr.wikidata_id:
-                final_popularity += 15
-                
-            attr.popularity_score = min(100.0, final_popularity)
+            attr.popularity_score = _calculate_popularity_score(attr)
             
             # 2. Seasonal Index Calculation
             dest = dest_map.get(attr.destination_id)
@@ -114,18 +116,7 @@ class AttractionScorer:
         attractions = self.db.query(Attraction).all()
 
         for attr in attractions:
-            google_bonus = 0
-            if attr.google_rating and attr.google_rating >= 4.0:
-                google_bonus += (attr.google_rating - 4.0) * 25
-
-            review_bonus = 0
-            if attr.review_count and attr.review_count > 0:
-                review_bonus = min(45, math.log10(attr.review_count) * 11)
-
-            final_popularity = 30 + google_bonus + review_bonus
-            if attr.wikidata_id:
-                final_popularity += 15
-            attr.popularity_score = min(100.0, final_popularity)
+            attr.popularity_score = _calculate_popularity_score(attr)
 
             destination = dest_map.get(attr.destination_id)
             if destination:

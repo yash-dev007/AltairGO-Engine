@@ -23,9 +23,9 @@ Answers the questions travellers ask AFTER they have a plan but BEFORE they trav
 """
 
 import json
-import logging
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
+import structlog
 from flask import Blueprint, g, jsonify, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
 
@@ -37,7 +37,7 @@ from backend.models import (
 )
 
 trip_tools_bp = Blueprint("trip_tools", __name__)
-log = logging.getLogger(__name__)
+log = structlog.get_logger(__name__)
 
 # Items that should be advance-booked (checked in readiness)
 _ADVANCE_BOOKING_TYPES = frozenset({"hotel", "flight", "airport_transfer"})
@@ -173,7 +173,7 @@ def trip_readiness(trip_id: int):
                 if act.get("requires_advance_booking") and not act.get("is_break"):
                     act_name = act.get("name", "")
                     already_booked = any(
-                        b.item_name == act_name and b.status == "booked"
+                        b.item_name.lower() == act_name.lower() and b.status == "booked"
                         for b in bookings
                     )
                     if not already_booked:
@@ -191,9 +191,9 @@ def trip_readiness(trip_id: int):
         log.warning(f"Readiness booking check failed: {e}")
 
     # ── Visa & Entry ───────────────────────────────────────────────────────────
+    dest = None  # initialised here so Health & Safety block below can reference it safely
     try:
         dest_name = (itinerary.get("itinerary") or [{}])[0].get("location") if itinerary.get("itinerary") else None
-        dest = None
         if dest_name:
             dest = db.session.query(Destination).filter_by(name=dest_name).first()
         if dest:
@@ -626,20 +626,32 @@ def swap_activity(trip_id: int):
             "connects_well_with": replacement.connects_well_with,
         })()
 
-        # Replace in pool then re-optimize the day
-        current_pool = [
-            a for a in candidates
-            if a.name.lower() != activity_name.lower()
-        ][:1] + alternatives[:5]
-
         # Re-run route optimizer on the updated pool
-        date_str = "2026-01-01"
         if trip.start_date:
             try:
                 base = datetime.strptime(trip.start_date, "%Y-%m-%d")
                 date_str = (base + timedelta(days=day_num - 1)).strftime("%Y-%m-%d")
             except Exception:
-                pass
+                log.warning(f"swap_activity: could not parse start_date '{trip.start_date}', using today as fallback")
+                date_str = date.today().isoformat()
+        else:
+            log.warning(f"swap_activity: trip {trip_id} has no start_date; day-of-week filtering may be inaccurate")
+            date_str = date.today().isoformat()
+
+        # Batch-load all existing attractions for this destination in one query
+        existing_names = [
+            a.get("name") for a in current_activities_non_break
+            if a.get("name") and a.get("name", "").lower() != activity_name.lower()
+        ]
+        existing_attr_map: dict[str, object] = {}
+        if existing_names:
+            existing_attrs = (
+                db.session.query(Attraction)
+                .filter_by(destination_id=dest.id)
+                .filter(Attraction.name.in_(existing_names))
+                .all()
+            )
+            existing_attr_map = {attr.name: attr for attr in existing_attrs}
 
         # Build the full new attraction list for this day (replace target)
         new_pool = []
@@ -647,10 +659,7 @@ def swap_activity(trip_id: int):
             if a.get("name", "").lower() == activity_name.lower():
                 new_pool.append(new_act_obj)
             else:
-                # Re-use the existing attraction objects from DB
-                existing = db.session.query(Attraction).filter_by(
-                    destination_id=dest.id, name=a.get("name")
-                ).first()
+                existing = existing_attr_map.get(a.get("name"))
                 if existing:
                     new_pool.append(existing)
 

@@ -7,6 +7,16 @@ from backend.models import Country, Destination, State
 search_bp = Blueprint("search", __name__)
 
 
+def _search_sort_key(r: dict, q_lower: str) -> int:
+    """Sort exact name matches first, prefix matches second, contains last."""
+    name = r["name"].lower()
+    if name == q_lower:
+        return 0
+    if name.startswith(q_lower):
+        return 1
+    return 2
+
+
 @search_bp.get("/api/search")
 def search():
     q = (request.args.get("q") or "").strip()
@@ -15,7 +25,7 @@ def search():
     if len(q) > 100:
         return jsonify({"error": "Query too long"}), 400
 
-    limit = min(int(request.args.get("limit", 10)), 30)
+    limit = min(request.args.get("limit", type=int, default=10) or 10, 30)
     search_type = request.args.get("type", "all")  # all | destination | country
 
     results = []
@@ -66,13 +76,5 @@ def search():
 
     # Sort: exact name match first, then prefix, then contains
     q_lower = q.lower()
-    def sort_key(r):
-        name = r["name"].lower()
-        if name == q_lower:
-            return 0
-        if name.startswith(q_lower):
-            return 1
-        return 2
-
-    results.sort(key=sort_key)
+    results.sort(key=lambda r: _search_sort_key(r, q_lower))
     return jsonify({"results": results[:limit], "query": q}), 200

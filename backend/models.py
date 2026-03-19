@@ -1,5 +1,5 @@
 import os
-from sqlalchemy import Column, Float, String, Integer, JSON, ForeignKey, DateTime, SmallInteger, Text, Index
+from sqlalchemy import Boolean, Column, Float, String, Integer, JSON, ForeignKey, DateTime, SmallInteger, Text, Index
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship, validates
 try:
@@ -86,9 +86,9 @@ class Destination(Base):
     estimated_cost_per_day   = Column(Integer, nullable=True)
     rating                   = Column(Float, nullable=True)
     tag                      = Column(String(50), nullable=True)
-    highlights               = Column(JSON, default=list)
-    best_time_months         = Column(JSON, default=list)
-    vibe_tags                = Column(JSON, default=list)
+    highlights               = Column(JSON, default=lambda: [])
+    best_time_months         = Column(JSON, default=lambda: [])
+    vibe_tags                = Column(JSON, default=lambda: [])
     state_id                 = Column(Integer, ForeignKey('state.id'))
     
     # ── Phase 1 Intelligence Architecture ────────────────────────
@@ -235,7 +235,7 @@ class HotelPrice(Base):
     availability_score  = Column(Float, default=1.0)       # 0.0–1.0
     latitude            = Column(Float)
     longitude           = Column(Float)
-    last_synced         = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    last_synced         = Column(DateTime(timezone=True), server_default=func.now())
 
     destination         = relationship('Destination', back_populates='hotel_prices')
 
@@ -252,7 +252,7 @@ class FlightRoute(Base):
     frequency_per_week = Column(SmallInteger)
     transport_type     = Column(String(20), default='flight', index=True) # flight / train / bus
     train_classes      = Column(JSON)                          # {ac: 1200, sleeper: 450}
-    last_synced        = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    last_synced        = Column(DateTime(timezone=True), server_default=func.now())
 
 class Trip(Base):
     __tablename__ = 'trip'
@@ -581,8 +581,6 @@ class ExpenseEntry(Base):
     )
 
 
-from sqlalchemy import Boolean, ARRAY
-
 class BlogPost(Base):
     """CMS blog posts — managed via Admin Panel, served publicly."""
     __tablename__ = 'blog_post'
@@ -595,7 +593,7 @@ class BlogPost(Base):
     image      = Column(Text, nullable=True)
     excerpt    = Column(Text, nullable=True)
     content    = Column(Text, nullable=True)
-    tags       = Column(ARRAY(String), nullable=True)
+    tags       = Column(JSON, default=lambda: [])  # JSON list instead of ARRAY for SQLite compat
     author     = Column(String(100), nullable=True)
     published  = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())

@@ -1,9 +1,14 @@
+import secrets
 import structlog
+from werkzeug.security import check_password_hash, generate_password_hash
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
 
 from backend.database import db
-from backend.models import User, UserProfile
+from backend.models import (
+    AnalyticsEvent, AsyncJob, AttractionSignal, ExpenseEntry,
+    Feedback, User, UserProfile,
+)
 
 profile_bp = Blueprint("profile", __name__)
 log = structlog.get_logger(__name__)
@@ -68,25 +73,36 @@ def update_profile():
 @profile_bp.delete("/api/user/account")
 @jwt_required()
 def delete_account():
-    """GDPR-compliant account deletion (anonymise, preserve trip refs)."""
+    """GDPR-compliant account deletion (anonymise user + purge all related activity data)."""
     user_id = int(get_jwt_identity())
     user = db.session.get(User, user_id)
     if not user:
         return jsonify({"error": "User not found"}), 404
 
     body = request.get_json(silent=True) or {}
-    from werkzeug.security import check_password_hash
     if not check_password_hash(user.password_hash, body.get("password", "")):
         return jsonify({"error": "Password confirmation required"}), 403
 
     try:
+        # Purge all user activity data (GDPR right to be forgotten)
+        db.session.query(AttractionSignal).filter_by(user_id=user_id).delete()
+        db.session.query(AnalyticsEvent).filter_by(user_id=user_id).delete()
+        db.session.query(Feedback).filter_by(user_id=user_id).delete()
+        db.session.query(ExpenseEntry).filter_by(user_id=user_id).delete()
+        db.session.query(AsyncJob).filter_by(user_id=user_id).delete()
+        # Delete profile preferences
+        db.session.query(UserProfile).filter_by(user_id=user_id).delete()
+
+        # Anonymise the User record (preserve FK refs from Trip, Booking, etc.)
         user.name = "Deleted User"
         user.email = f"deleted_{user_id}@altairgo.invalid"
-        user.password_hash = ""
+        user.password_hash = generate_password_hash(secrets.token_hex(32))
+
         db.session.commit()
         log.info("account_deleted", user_id=user_id)
     except Exception as e:
         db.session.rollback()
+        log.exception("account_delete_failed", user_id=user_id, error=str(e))
         return jsonify({"error": "Failed to delete account"}), 500
 
     return jsonify({"message": "Account deleted"}), 200

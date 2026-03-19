@@ -25,16 +25,18 @@ Booking automation flow for a saved trip:
        marks the booking as 'booked' with a simulated reference.
 """
 
-import os
-from datetime import datetime, timedelta, timezone
+import secrets
+from datetime import datetime, date, timedelta, timezone
+from math import ceil
 from uuid import uuid4
 
 import structlog
 from flask import Blueprint, jsonify, request, g
 from flask_jwt_extended import get_jwt_identity, jwt_required
 
+from backend.constants import OCCUPANCY_PER_ROOM
 from backend.database import db
-from backend.models import Booking, Trip, TripPermissionRequest
+from backend.models import Booking, FlightRoute, Trip, TripPermissionRequest
 
 bookings_bp = Blueprint("bookings", __name__)
 log = structlog.get_logger(__name__)
@@ -53,12 +55,12 @@ def _build_booking_items(trip: Trip) -> list[dict]:
     items = []
     data = trip.itinerary_json or {}
     num_travelers = trip.travelers or 1
-    start_date_str = trip.start_date or "2026-01-01"
+    start_date_str = trip.start_date or date.today().isoformat()
 
     try:
         start_date = datetime.strptime(start_date_str, "%Y-%m-%d")
     except ValueError:
-        start_date = datetime(2026, 1, 1)
+        start_date = datetime.combine(date.today(), datetime.min.time())
 
     duration = trip.duration or 1
 
@@ -81,8 +83,17 @@ def _build_booking_items(trip: Trip) -> list[dict]:
             "total_price_inr": int(outbound_price * num_travelers),
             "payload": {"origin": from_city, "destination": dest_city, "flight_type": "outbound"},
         })
-        # Return flight
+        # Return flight — look up actual return route price; fall back to outbound price
         return_date = start_date + timedelta(days=duration)
+        return_route = (
+            db.session.query(FlightRoute)
+            .filter_by(origin_iata=dest_city, destination_iata=from_city)
+            .first()
+        )
+        return_price = (
+            return_route.avg_one_way_inr if (return_route and return_route.avg_one_way_inr)
+            else outbound_price
+        )
         items.append({
             "type": "flight",
             "item_name": f"Return Flight: {dest_city} → {from_city}",
@@ -90,9 +101,9 @@ def _build_booking_items(trip: Trip) -> list[dict]:
             "booking_url": "",
             "start_datetime": return_date.isoformat(),
             "end_datetime": return_date.isoformat(),
-            "price_inr": int(outbound_price),
+            "price_inr": int(return_price),
             "num_travelers": num_travelers,
-            "total_price_inr": int(outbound_price * num_travelers),
+            "total_price_inr": int(return_price * num_travelers),
             "payload": {"origin": dest_city, "destination": from_city, "flight_type": "return"},
         })
 
@@ -103,6 +114,7 @@ def _build_booking_items(trip: Trip) -> list[dict]:
         cost_per_night = accom.get("cost_per_night") or 0
         end_dt = start_date + timedelta(days=duration)
         special_occasion = data.get("traveler_profile", {}).get("special_occasion")
+        num_rooms = ceil(num_travelers / OCCUPANCY_PER_ROOM)
         items.append({
             "type": "hotel",
             "item_name": accom["hotel_name"],
@@ -112,7 +124,7 @@ def _build_booking_items(trip: Trip) -> list[dict]:
             "end_datetime": end_dt.isoformat(),
             "price_inr": int(cost_per_night),
             "num_travelers": num_travelers,
-            "total_price_inr": int(cost_per_night * duration * num_travelers),
+            "total_price_inr": int(cost_per_night * duration * num_rooms),  # per-room × nights × rooms needed
             "payload": {
                 "star_rating": accom.get("star_rating"),
                 "category": accom.get("category"),
@@ -141,22 +153,23 @@ def _build_booking_items(trip: Trip) -> list[dict]:
             "payload": segment,
         })
 
-    duration = trip.duration or 1
+    has_flights = from_city and dest_city
 
     # ── Airport transfer — arrival (Day 1) ────────────────────────────────────
-    # Every trip needs a cab from the airport/station to the hotel on arrival.
-    items.append({
-        "type": "airport_transfer",
-        "item_name": f"Airport → Hotel Transfer (Arrival, Day 1)",
-        "provider": "Ola/Uber",
-        "booking_url": "",
-        "start_datetime": start_date.isoformat(),
-        "end_datetime": start_date.isoformat(),
-        "price_inr": 600,          # conservative estimate; actual depends on distance
-        "num_travelers": num_travelers,
-        "total_price_inr": 600 * num_travelers,
-        "payload": {"transfer_type": "arrival", "tip": "Pre-book via app to avoid inflated fares."},
-    })
+    # Only add airport transfers when the trip includes flights.
+    if has_flights:
+        items.append({
+            "type": "airport_transfer",
+            "item_name": f"Airport → Hotel Transfer (Arrival, Day 1)",
+            "provider": "Ola/Uber",
+            "booking_url": "",
+            "start_datetime": start_date.isoformat(),
+            "end_datetime": start_date.isoformat(),
+            "price_inr": 600,          # conservative estimate; actual depends on distance
+            "num_travelers": num_travelers,
+            "total_price_inr": 600 * num_travelers,
+            "payload": {"transfer_type": "arrival", "tip": "Pre-book via app to avoid inflated fares."},
+        })
 
     # ── Activity tickets & restaurant reservations ─────────────────────────────
     for day_idx, day in enumerate(data.get("itinerary", [])):
@@ -229,7 +242,7 @@ def _build_booking_items(trip: Trip) -> list[dict]:
             })
 
     # ── Airport transfer — departure (last day) ────────────────────────────────
-    if duration > 1:
+    if has_flights and duration > 1:
         departure_date = start_date + timedelta(days=duration - 1)
         items.append({
             "type": "airport_transfer",
@@ -429,7 +442,7 @@ def respond_to_booking_plan(trip_id: int):
 
         for booking_id, approved in decisions.items():
             booking = db.session.get(Booking, booking_id)
-            if not booking or booking.trip_id != trip_id:
+            if not booking or booking.trip_id != trip_id or booking.permission_request_id != perm_req.id:
                 not_found.append(booking_id)
                 continue
             if approved:
@@ -524,7 +537,6 @@ def execute_booking(booking_id: str):
         #   cab      → Ola / Uber API
         #
         # For now: simulate a successful booking with a random reference.
-        import secrets
         booking_ref = f"ALTAIR-{booking.booking_type.upper()[:3]}-{secrets.token_hex(4).upper()}"
         booking.status = "booked"
         booking.booking_ref = booking_ref
@@ -584,7 +596,6 @@ def execute_all_bookings(trip_id: int):
                 "failed": 0,
             }), 200
 
-        import secrets
         booked, failed = 0, 0
         results = []
         for booking in approved_bookings:
@@ -596,6 +607,7 @@ def execute_all_bookings(trip_id: int):
                 booked += 1
                 results.append({"booking_id": booking.id, "item_name": booking.item_name, "ref": ref, "status": "booked"})
             except Exception as exc:
+                log.warning("booking.execute_single_failed", booking_id=booking.id, error=str(exc))
                 booking.status = "failed"
                 booking.failure_reason = str(exc)
                 failed += 1
@@ -684,9 +696,10 @@ def list_trip_bookings(trip_id: int):
         )
 
         # Group by type
+        all_serialized = _serialize_bookings(bookings)
         grouped: dict = {}
-        for b in bookings:
-            grouped.setdefault(b.booking_type, []).append(_serialize_bookings([b])[0])
+        for s in all_serialized:
+            grouped.setdefault(s["type"], []).append(s)
 
         summary = {
             "total": len(bookings),
@@ -736,7 +749,7 @@ def _parse_dt(dt_str: str | None) -> datetime | None:
         return None
     for fmt in ("%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M", "%Y-%m-%d"):
         try:
-            return datetime.strptime(dt_str, fmt)
+            return datetime.strptime(dt_str, fmt).replace(tzinfo=timezone.utc)
         except ValueError:
             continue
     return None

@@ -48,13 +48,16 @@ BOOKING PLAN EDITING (customise before execution)
 """
 
 import copy
-import logging
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
+
+import structlog
+from math import ceil
 from uuid import uuid4
 
 from flask import Blueprint, g, jsonify, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
 
+from backend.constants import OCCUPANCY_PER_ROOM
 from backend.database import db
 from backend.engine.route_optimizer import RouteOptimizer
 from backend.models import (
@@ -62,7 +65,7 @@ from backend.models import (
 )
 
 trip_editor_bp = Blueprint("trip_editor", __name__)
-log = logging.getLogger(__name__)
+log = structlog.get_logger(__name__)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -96,7 +99,7 @@ def _reoptimize_day(trip: Trip, day_num: int, day_data: dict) -> dict:
     num_days = trip.duration or 1
 
     # Resolve date string for this day
-    date_str = "2026-01-01"
+    date_str = date.today().isoformat()
     if trip.start_date:
         try:
             base = datetime.strptime(trip.start_date, "%Y-%m-%d")
@@ -215,7 +218,8 @@ def hotel_options(trip_id: int):
             "price_per_night_min": h.price_per_night_min,
             "price_per_night_max": h.price_per_night_max,
             "total_stay_estimate_inr": (
-                int(h.price_per_night_min * (trip.duration or 1) * (trip.travelers or 1))
+                int(h.price_per_night_min * (trip.duration or 1)
+                    * ceil((trip.travelers or 1) / OCCUPANCY_PER_ROOM))
                 if h.price_per_night_min else None
             ),
             "booking_url": h.booking_url,
@@ -307,7 +311,8 @@ def change_hotel(trip_id: int):
         # Also update cost_breakdown if cost changed
         duration = trip.duration or 1
         travelers = trip.travelers or 1
-        new_hotel_total = new_accom["cost_per_night"] * duration * travelers
+        num_rooms = ceil(travelers / OCCUPANCY_PER_ROOM)
+        new_hotel_total = new_accom["cost_per_night"] * duration * num_rooms
         if new_hotel_total > 0:
             itinerary.setdefault("cost_breakdown", {})["accommodation"] = new_hotel_total
             # Recompute total_cost
@@ -924,7 +929,7 @@ def add_custom_booking(trip_id: int):
                 return None
             for fmt in ("%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M", "%Y-%m-%d"):
                 try:
-                    return datetime.strptime(s, fmt)
+                    return datetime.strptime(s, fmt).replace(tzinfo=timezone.utc)
                 except ValueError:
                     continue
             return None

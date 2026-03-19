@@ -13,26 +13,42 @@ sharing_bp = Blueprint("sharing", __name__)
 log = structlog.get_logger(__name__)
 
 _SHARE_TTL = 60 * 60 * 24 * 30  # 30 days
+_redis_pool: dict = {}  # keyed by REDIS_URL → ConnectionPool (avoids per-request connections)
 
 
 def _redis():
-    url = current_app.config.get("REDIS_URL", "")
-    return redis.from_url(url, decode_responses=True)
+    try:
+        url = current_app.config.get("REDIS_URL", "")
+        if not url:
+            return None
+        if url not in _redis_pool:
+            _redis_pool[url] = redis.ConnectionPool.from_url(url)
+        return redis.Redis(connection_pool=_redis_pool[url], decode_responses=True)
+    except Exception:
+        return None
 
 
 @sharing_bp.post("/api/trip/<int:trip_id>/share")
 @jwt_required()
 def create_share_link(trip_id):
     user_id = int(get_jwt_identity())
-    trip = db.session.query(Trip).filter_by(id=trip_id, user_id=user_id).first()
+
+    # Use FOR UPDATE lock to serialise concurrent share requests for the same trip
+    trip = (
+        db.session.query(Trip)
+        .filter_by(id=trip_id, user_id=user_id)
+        .with_for_update()
+        .first()
+    )
     if not trip:
         return jsonify({"error": "Trip not found"}), 404
 
-    # Reuse existing token if present
+    # Reuse existing token if present (second reader after lock sees freshly committed token)
     notes = trip.user_notes or {}
     token = notes.get("_share_token")
     if not token:
         token = secrets.token_urlsafe(24)
+        notes = dict(notes)
         notes["_share_token"] = token
         trip.user_notes = notes
         db.session.commit()
@@ -40,7 +56,8 @@ def create_share_link(trip_id):
     # Cache token → trip_id in Redis for O(1) lookup
     try:
         r = _redis()
-        r.setex(f"share:{token}", _SHARE_TTL, str(trip_id))
+        if r:
+            r.setex(f"share:{token}", _SHARE_TTL, str(trip_id))
     except Exception as e:
         log.warning("share_redis_cache_failed", error=str(e))
 
@@ -58,9 +75,10 @@ def get_shared_trip(share_token):
     # Fast path: Redis
     try:
         r = _redis()
-        val = r.get(f"share:{share_token}")
-        if val:
-            trip_id = int(val)
+        if r:
+            val = r.get(f"share:{share_token}")
+            if val:
+                trip_id = int(val)
     except Exception:
         pass
 
@@ -70,12 +88,30 @@ def get_shared_trip(share_token):
         if trip and (trip.user_notes or {}).get("_share_token") != share_token:
             trip = None
     else:
-        # Slow path: DB scan (fallback when Redis is cold)
-        trips = db.session.query(Trip).filter(Trip.user_notes.isnot(None)).all()
-        trip = next(
-            (t for t in trips if (t.user_notes or {}).get("_share_token") == share_token),
-            None,
-        )
+        # Slow path: DB query (fallback when Redis is cold)
+        # Use JSON extraction where supported; fall back to filtered scan
+        try:
+            from sqlalchemy import cast, String
+            trip = (
+                db.session.query(Trip)
+                .filter(
+                    Trip.user_notes.isnot(None),
+                    cast(Trip.user_notes["_share_token"].astext, String) == share_token,
+                )
+                .first()
+            )
+        except Exception:
+            # SQLite or engines without JSON path support — limited scan
+            trip = (
+                db.session.query(Trip)
+                .filter(Trip.user_notes.isnot(None))
+                .filter(Trip.user_notes.contains(share_token))
+                .all()
+            )
+            trip = next(
+                (t for t in trip if (t.user_notes or {}).get("_share_token") == share_token),
+                None,
+            )
 
     if not trip:
         return jsonify({"error": "Shared trip not found or link expired"}), 404
@@ -106,7 +142,9 @@ def revoke_share_link(trip_id):
 
     if token:
         try:
-            _redis().delete(f"share:{token}")
+            r = _redis()
+            if r:
+                r.delete(f"share:{token}")
         except Exception:
             pass
 

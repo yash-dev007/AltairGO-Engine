@@ -24,17 +24,16 @@ Answers the questions every traveler asks BEFORE they know their destination:
 """
 
 import json
-import logging
 from datetime import datetime
 
+import structlog
 from flask import Blueprint, jsonify, request
 
-from backend.constants import PAGINATION_MAX_PAGE
 from backend.database import db
-from backend.models import Attraction, Destination, DestinationInfo, HotelPrice
+from backend.models import Attraction, Destination, DestinationInfo, HotelPrice, State
 
 discover_bp = Blueprint("discover", __name__)
-log = logging.getLogger(__name__)
+log = structlog.get_logger(__name__)
 
 # Month name ↔ short-key mapping (seasonal_score keys are 3-letter lowercase)
 _MONTH_MAP = {
@@ -212,7 +211,6 @@ def recommend_destinations():
     try:
         query = db.session.query(Destination)
         if state_filter:
-            from backend.models import State
             matching_states = db.session.query(State).filter(
                 State.name.ilike(f"%{state_filter}%")
             ).all()

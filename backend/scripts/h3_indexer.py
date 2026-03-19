@@ -12,6 +12,8 @@ Fixes from original:
 import sys
 import os
 import logging
+from dotenv import load_dotenv
+load_dotenv()
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from backend.database import SessionLocal
@@ -54,6 +56,7 @@ def backfill():
         )).fetchall()
         log.info(f"Destinations to index: {len(rows)}")
 
+        # Destinations are few (<500), so a single commit after all rows is safe.
         ok = fail = 0
         for r in rows:
             try:

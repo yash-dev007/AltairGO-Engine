@@ -23,11 +23,11 @@ except ImportError:
     _scraper_agent = None
     log.warning("WebScraperAgent not available — running without scraper fallback.")
 
-# Base multiplier by budget category
+# Cost ranges keyed by budget_category string (matches Attraction.budget_category)
 ATTR_COST_BASE = {
-    1: {"min": 0, "max": 100},
-    2: {"min": 100, "max": 400},
-    3: {"min": 400, "max": 1500}
+    "budget":    {"min": 0,   "max": 100},
+    "mid-range": {"min": 100, "max": 400},
+    "luxury":    {"min": 400, "max": 1500},
 }
 
 HOTEL_BASE = {
@@ -65,8 +65,8 @@ def sync_attraction_prices(db):
     now = datetime.now(timezone.utc)
     
     for a in attractions:
-        bc = getattr(a, 'budget_category', 2)
-        base = ATTR_COST_BASE.get(bc, ATTR_COST_BASE[2])
+        bc = getattr(a, 'budget_category', None) or 'mid-range'
+        base = ATTR_COST_BASE.get(bc, ATTR_COST_BASE['mid-range'])
         
         # ── AI Agent: Try web scraper first for real-world prices ─
         scraped = _try_scrape_attraction_price(a)
@@ -88,7 +88,7 @@ def sync_attraction_prices(db):
         # Override if it's explicitly a natural/religious free attraction
         if a.type in ["nature", "religious", "shopping"]:
             cost_min = 0
-            cost_max = 50 if bc > 1 else 0
+            cost_max = 50 if bc != 'budget' else 0
             
         a.entry_cost_min = cost_min
         a.entry_cost_max = cost_max
@@ -135,8 +135,7 @@ def sync_hotel_prices(db):
                 db.add(p)
             count += 1
     
-    db.commit()
-    log.info(f"Generated {count} real-time hotel price nodes.")
+    log.info(f"Generated {count} hotel price nodes.")
 
 def sync_flight_routes(db):
     """
@@ -236,20 +235,24 @@ def sync_flight_routes(db):
         ("GAU", "DIB",  60, ["IndiGo"]),
     ]
 
-    def _price_for_duration(dur_min: int) -> int:
-        """Rough distance-based pricing: short < 75min, medium < 130min, long >= 130min."""
+    def _price_for_duration(dur_min: int, route_key: str = "") -> int:
+        """
+        Distance-based pricing seeded by route key so prices are stable across
+        runs — the same route always gets the same simulated fare.
+        """
+        rng = random.Random(route_key)
         if dur_min < 75:
-            return random.randint(2200, 4500)
+            return rng.randint(2200, 4500)
         if dur_min < 130:
-            return random.randint(3500, 7000)
-        return random.randint(5000, 11000)
+            return rng.randint(3500, 7000)
+        return rng.randint(5000, 11000)
 
     for origin_iata, dest_iata, dur, airlines in ROUTES:
         for o, d in [(origin_iata, dest_iata), (dest_iata, origin_iata)]:
             existing = db.query(FlightRoute).filter_by(
                 origin_iata=o, destination_iata=d, transport_type="flight"
             ).first()
-            price = _price_for_duration(dur)
+            price = _price_for_duration(dur, f"{o}-{d}")
             if existing:
                 existing.avg_one_way_inr = price
                 existing.duration_minutes = dur
@@ -267,7 +270,6 @@ def sync_flight_routes(db):
                 ))
             count += 1
 
-    db.commit()
     log.info(f"Upserted {count} flight route pricing links.")
 
 def run_sync():
@@ -290,39 +292,35 @@ def run_sync():
 
 
 class PriceSyncer:
+    """Thin wrapper around module-level sync functions.
+
+    Pass a ``db_session`` when running inside an existing transaction (e.g.
+    Celery tasks). Omit it to have each method manage its own session and commit.
+    """
+
     def __init__(self, db_session=None):
         self.db = db_session
 
-    def sync_attraction_prices(self):
-        if self.db is None:
-            db = SessionLocal()
-            try:
-                sync_attraction_prices(db)
-                db.commit()
-            finally:
-                db.close()
+    def _exec(self, fn):
+        """Run *fn(db)* using the injected session or a fresh one."""
+        if self.db is not None:
+            fn(self.db)
             return
-        sync_attraction_prices(self.db)
+        db = SessionLocal()
+        try:
+            fn(db)
+            db.commit()
+        finally:
+            db.close()
+
+    def sync_attraction_prices(self):
+        self._exec(sync_attraction_prices)
 
     def sync_hotel_prices(self):
-        if self.db is None:
-            db = SessionLocal()
-            try:
-                sync_hotel_prices(db)
-            finally:
-                db.close()
-            return
-        sync_hotel_prices(self.db)
+        self._exec(sync_hotel_prices)
 
     def sync_flight_routes(self):
-        if self.db is None:
-            db = SessionLocal()
-            try:
-                sync_flight_routes(db)
-            finally:
-                db.close()
-            return
-        sync_flight_routes(self.db)
+        self._exec(sync_flight_routes)
 
     def run(self):
         if self.db is None:
