@@ -78,7 +78,7 @@ AltairGO-Engine-main/
 │   │   ├── auth.py                 # @require_admin decorator
 │   │   └── helpers.py
 │   └── tests/                      # 188 passed, 1 skipped — run: python -m pytest backend/tests/ -q
-├── dummy-frontend/                 # React 19 traveler-facing + admin UI (see §12)
+├── [frontend moved to D:\Projects\AltairGO-Platform]  # React 19 traveler-facing + admin UI (see §12)
 │   ├── package.json                # recharts + react-hot-toast + framer-motion + lucide-react
 │   ├── vite.config.js              # Dev proxy to :5000 + manualChunks code splitting
 │   └── src/
@@ -442,11 +442,13 @@ Triggered via `POST /api/ops/trigger-agent {agent_key}` (admin only).
 
 ---
 
-## 12. Frontend (`dummy-frontend/`)
+## 12. Frontend (`D:\Projects\AltairGO-Platform`)
+
+> **Note:** Frontend has been moved out of `dummy-frontend/` into its own standalone repo at `D:\Projects\AltairGO-Platform`.
 
 **Tech:** React 19, Vite 7, Tailwind CSS v4 (via `@tailwindcss/vite`), Framer Motion, Lucide React, React Router v7, Recharts, React Hot Toast
 
-**Dev server:** `npm run dev` → `http://localhost:5173`
+**Dev server:** `npm run dev` (from `D:\Projects\AltairGO-Platform`) → `http://localhost:5173`
 
 **Proxy:** All `/api/*`, `/auth/*`, `/generate-*`, `/get-trip`, `/countries`, `/destinations` → `http://127.0.0.1:5000`
 
@@ -469,7 +471,7 @@ Triggered via `POST /api/ops/trigger-agent {agent_key}` (admin only).
 | `/trip/shared/:token` | SharedTrip | Public |
 | `/planner/*` | Planner (5-step wizard + generating) | Protected |
 | `/trips` | MyTrips | Protected |
-| `/trip/:id` | TripDetail (5 tabs) | Protected |
+| `/trip/:id` | TripDetail (6 tabs: itinerary, bookings, expenses, readiness, notes, summary) | Protected |
 | `/trip/:id/bookings` | Bookings | Protected |
 | `/trip/:id/expenses` | Expenses | Protected |
 | `/trip/:id/briefing/:day` | DailyBriefing | Protected |
@@ -588,7 +590,7 @@ docker compose up -d redis   # OR redis-server
 .venv/Scripts/python.exe -m flask --app backend.app:create_app run --port 5000 --reload
 
 # 3. Start Vite frontend
-cd dummy-frontend && npm run dev
+cd "D:/Projects/AltairGO-Platform" && npm run dev
 
 # Access: http://localhost:5173
 # API health: http://127.0.0.1:5000/health
@@ -619,7 +621,33 @@ npm run build   # outputs to dist/ — serve via nginx or CDN
 
 ---
 
-## 18. Architecture Patterns
+## 18. Frontend UX Patterns & Design Decisions
+
+### Planner Wizard (5-step, `TripPlannerPage.jsx`)
+- **Step 1** — Single search input with auto-focus; AI recommend button; auto-detects country from first destination added (no manual country dropdown)
+- **Step 2** — Date + duration with quick-pick buttons (3/5/7/10 days)
+- **Step 3** — Budget slider + manual input; live per-person-per-day hint with tier label (Budget/Standard/Luxury)
+- **Step 4** — Progressive disclosure: traveler type → conditional family/senior counts → interests chips (8 options) → collapsed "Advanced" section (dietary, fitness, accessibility toggle, special occasion)
+- **Step 5** — Summary review includes interests row when any selected; Sparkles generate button
+
+### TripViewerPage (6 tabs: `TripViewerPage.jsx`)
+- **Itinerary tab** — Pending bookings banner (loads bookings silently on mount); each day card has "Day Brief" link → `/trip/:id/briefing/:day`
+- **Bookings tab** — 3-step workflow explainer; status summary pill bar; booking cards with type emoji icons, left-side color border, booking_url link, partner_name, booking_ref; "Confirm & Book All Approved" button
+- **Summary tab** — Post-trip stats, activity type chips, review form with star rating + tag chips
+- Quality score shows tooltip "measures itinerary diversity, budget fit..." on hover
+- Tab bar uses `scrollbarWidth: none` for clean mobile scroll
+
+### My Trips Empty State (`DashboardPage.jsx`)
+- Shows benefit chips (real cost breakdowns, hotel & flight, editable plan)
+- Two CTAs: "Plan My First Trip" (primary) + "Browse destinations first" (secondary)
+
+### Home Page (`Home.jsx`)
+- Hero button: "Plan My Trip Free" (removes friction, signals no cost barrier)
+- Steps copy updated to be outcome/benefit-focused (e.g. "AI Builds Your Plan")
+
+---
+
+## 19. Architecture Patterns
 
 1. **Async-first generation** — Celery worker runs pipeline; HTTP returns job_id immediately (or synchronously in DEV_EAGER)
 2. **Cache-first** — SHA-256 Redis cache check before pipeline; 7-day TTL
