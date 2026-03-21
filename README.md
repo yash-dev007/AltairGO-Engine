@@ -166,6 +166,15 @@ POST /generate-itinerary
 - Trip sharing (public share link with 30-day Redis TTL)
 - Next-trip ideas (post-trip recommendations based on activity types enjoyed)
 - Trip variants (relaxed/balanced/intense activity count variants)
+- Post-trip summary (planned vs actual spend, highlights, top activity types — cached 30 days)
+- Trip + attraction reviews (star rating, tag chips, free-text comment)
+- Webhook receiver (`/api/webhooks/<provider>`) with HMAC-SHA256 signature verification
+
+### Discovery & Search
+- Semantic AI search via text embeddings (Gemini `text-embedding-004`, 1536-dim, stored on Destination)
+- `GET /api/discover/recommend?q=` — blends cosine similarity (40%) + popularity score (60%)
+- SSE stream endpoint: `GET /get-itinerary-status/<job_id>/stream` — real-time generation status via Redis Streams + DB fallback
+- Feature flags (admin CRUD: `GET/POST /api/admin/feature-flags`, `PATCH/DELETE /api/admin/feature-flags/<key>`) with MD5 traffic bucketing + 60s cache
 
 ---
 
@@ -293,20 +302,28 @@ AltairGO-Engine/
 │   │   ├── profile.py             # GET/PUT profile, DELETE account (GDPR)
 │   │   ├── sharing.py             # Share link create/revoke + public view
 │   │   ├── search.py              # Full-text search (destinations + countries)
-│   │   ├── admin.py               # Admin CRUD
+│   │   ├── admin.py               # Admin CRUD + feature flag CRUD
 │   │   ├── dashboard.py           # /api/ops/summary + SSE live-metrics
 │   │   ├── ops.py                 # Job triggers, engine config, agent triggers
-│   │   └── signals.py             # Behavioral signal tracking
+│   │   ├── signals.py             # Behavioral signal tracking
+│   │   ├── feedback.py            # Trip/attraction reviews (POST/GET /api/trip/<id>/review)
+│   │   └── webhooks.py            # Webhook receiver with HMAC-SHA256 verification
 │   │
 │   ├── services/
 │   │   ├── gemini_service.py      # Gemini 2.0 Flash + lite fallback + 3 retries
 │   │   ├── cache_service.py       # SHA-256 Redis cache keys + env-var TTLs
 │   │   ├── metrics_service.py     # Pipeline metrics + SSE streaming
-│   │   └── image_service.py       # Wikipedia → Wikidata → Pexels → SVG placeholder
+│   │   ├── image_service.py       # Wikipedia → Wikidata → Pexels → SVG placeholder
+│   │   ├── feature_flags.py       # is_enabled() with MD5 bucketing + 60s TTL cache
+│   │   └── booking_providers/     # Abstract BookingProvider + SimulatedProvider + BookingComProvider
 │   │
 │   ├── agents/                    # AI agents (memory, QA, validator, scraper)
 │   ├── tasks/                     # Celery task implementations
-│   ├── scripts/                   # Data pipeline (OSM, enrichment, H3, scoring, prices)
+│   │   ├── score_updater.py       # update_scores() + update_scores_from_quality()
+│   │   ├── weather_sync.py        # Open-Meteo → WeatherAlert rows
+│   │   ├── post_trip.py           # generate_trip_summary() — cached 30 days
+│   │   └── embedding_sync.py      # Weekly Gemini text-embedding-004 sync
+│   ├── scripts/                   # Data pipeline (OSM, enrichment, H3, scoring, prices, embeddings)
 │   └── tests/                     # 188 passed, 1 skipped
 │       ├── conftest.py
 │       ├── test_auth.py
@@ -351,10 +368,15 @@ Access token: 1h | Refresh token: 30d
 |---|---|---|---|
 | `POST` | `/generate-itinerary` | — | Create async job |
 | `GET` | `/get-itinerary-status/<job_id>` | — | Poll status |
+| `GET` | `/get-itinerary-status/<job_id>/stream` | — | **SSE stream** — real-time status via Redis Streams |
 | `POST` | `/api/save-trip` | JWT | Save trip |
 | `GET` | `/get-trip/<trip_id>` | JWT | Fetch trip |
 | `GET` | `/api/user/trips` | JWT | Paginated list |
 | `POST` | `/api/trip/<id>/variants` | JWT | relaxed/balanced/intense variants |
+| `GET` | `/api/trip/<id>/summary` | JWT | Post-trip summary (cached 30 days) |
+| `GET` | `/api/trip/<id>/review` | JWT | Get existing review |
+| `POST` | `/api/trip/<id>/review` | JWT | Submit/update star rating + tag chips + comment |
+| `POST` | `/api/attraction/<id>/review` | JWT | Submit attraction review |
 
 **Sample request body:**
 
@@ -381,7 +403,7 @@ Access token: 1h | Refresh token: 30d
 
 | Method | Endpoint | Description |
 |---|---|---|
-| `GET` | `/api/discover/recommend` | AI-scored destination recommendations |
+| `GET` | `/api/discover/recommend` | AI-scored recommendations; add `?q=` for **semantic search** (embedding cosine sim 40% + score 60%) |
 | `GET` | `/api/discover/best-time/<dest_id>` | Month-by-month seasonal score matrix |
 | `GET` | `/api/discover/is-good-time?dest_id&month` | Quick verdict + best alternative month |
 | `POST` | `/api/discover/estimate-budget` | Full cost breakdown before committing |
@@ -467,6 +489,9 @@ All admin endpoints require `X-Admin-Key` header or admin JWT (`POST /api/admin/
 | `POST /api/ops/trigger-job` | Fire Celery job by name |
 | `POST /api/ops/trigger-agent` | Fire AI agent |
 | `GET/POST /api/ops/engine-config` | Read/update engine settings |
+| `GET/POST /api/admin/feature-flags` | List / create feature flags |
+| `PATCH/DELETE /api/admin/feature-flags/<key>` | Toggle / delete feature flag |
+| `POST /api/webhooks/<provider>` | Booking provider webhook receiver (HMAC-SHA256) |
 
 ---
 
