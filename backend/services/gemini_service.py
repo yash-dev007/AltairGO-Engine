@@ -6,6 +6,12 @@ import time
 import requests
 import structlog
 
+try:
+    from json_repair import repair_json as _repair_json_lib
+    _HAS_JSON_REPAIR = True
+except ImportError:
+    _HAS_JSON_REPAIR = False
+
 from backend.services.metrics_service import incr_daily_counter, mark_status
 
 log = structlog.get_logger(__name__)
@@ -184,11 +190,12 @@ STRICT RULES:
             mark_status("agent", "mcp_context", "ok", {"city": city, "travel_month": travel_month})
 
         try:
-            polished_content = self._request_json(prompt, timeout=15)
+            polished_content = self._request_json(prompt, timeout=90)
             self._merge_polish_updates(itinerary_data, polished_content)
         except Exception as exc:
             log.error(f"Gemini polish failed: {exc}")
-            return itinerary_data
+            # Do NOT return here — fall through to meta generation so trip_title
+            # and smart_insights are still applied even when polish text fails.
 
         try:
             template = self._load_template("itinerary_meta.txt")
@@ -200,36 +207,34 @@ STRICT RULES:
                     skeleton=json.dumps(skeleton)
                 )
             else:
-                meta_prompt = f"""
-Given this itinerary for a {user_prefs.get('traveler_type', 'couple')}
-visiting {user_prefs.get('city', 'India')} for {user_prefs.get('days', 3)} days:
-{json.dumps(skeleton)}
+                # Build compact summary — just themes + attraction names (no descriptions)
+                # so the prompt stays small enough for local models to complete without truncation
+                # _fallback_skeleton stores activity names as plain strings;
+                # _token_optimizer may return dicts — handle both forms.
+                def _activity_name(a) -> str:
+                    return a if isinstance(a, str) else (a.get("name") or a.get("activity") or "")
 
-Return ONLY a JSON object with exactly this structure:
-{{
-  "trip_title": "<vivid 5-8 word title capturing the trip's essence>",
-  "smart_insights": [
-    "<practical insight 1 — money-saving tip, local custom, or timing advice>",
-    "<practical insight 2>",
-    "<practical insight 3>"
-  ],
-  "packing_tips": [
-    "<destination-specific packing tip 1>",
-    "<packing tip 2>",
-    "<packing tip 3>",
-    "<packing tip 4>"
-  ]
-}}
+                compact = [
+                    {
+                        "day": d.get("day"),
+                        "theme": d.get("theme", ""),
+                        "places": [
+                            _activity_name(a)
+                            for a in d.get("activities", [])
+                            if _activity_name(a)
+                        ],
+                    }
+                    for d in (skeleton if isinstance(skeleton, list) else [])
+                ]
+                meta_prompt = f"""A {user_prefs.get('traveler_type', 'couple')} is visiting {user_prefs.get('city', 'India')} for {user_prefs.get('days', 3)} days.
+Places: {json.dumps(compact)}
 
-STRICT RULES:
-- smart_insights must be EXACTLY 3 strings.
-- packing_tips must be EXACTLY 4 strings.
-- NEVER change place names or any numeric values.
-- Return ONLY the JSON object, no markdown.
-""".strip()
-            if _context_agent and context:
-                meta_prompt = _context_agent.build_enriched_prompt(meta_prompt, context)
-            meta_data = self._request_json(meta_prompt, timeout=15)
+Return ONLY this JSON (no markdown, no extra text):
+{{"trip_title":"<vivid 5-8 word title>","smart_insights":["<money/timing tip>","<local custom tip>","<booking/logistics tip>"],"packing_tips":["<clothing tip>","<gear tip>","<health tip>","<tech/money tip>"]}}""".strip()
+            # Do NOT enrich meta prompt with live context — weather/festival data
+            # bloats the prompt beyond Ollama's token budget and isn't needed for
+            # generating trip titles or packing tips.
+            meta_data = self._request_json(meta_prompt, timeout=60)
             if meta_data.get("trip_title"):
                 itinerary_data["trip_title"] = meta_data["trip_title"]
             if meta_data.get("smart_insights"):
@@ -237,7 +242,7 @@ STRICT RULES:
             if meta_data.get("packing_tips"):
                 itinerary_data["packing_tips"] = meta_data["packing_tips"]
         except Exception as exc:
-            log.warning(f"Gemini meta generation skipped: {exc}")
+            log.warning("gemini.meta_generation_skipped", error=str(exc))
 
         if _qa_agent:
             qa_report = _qa_agent.review_itinerary(itinerary_data)
@@ -336,6 +341,9 @@ STRICT RULES:
                 "model": self.OLLAMA_MODEL,
                 "prompt": prompt + json_instruction,
                 "stream": False,
+                # Raise token limit so JSON responses aren't truncated mid-object.
+                # 2048 handles full 3-day polish responses; meta responses are ~300 tokens.
+                "options": {"num_predict": 2048},
             }
             response = requests.post(
                 f"{self.OLLAMA_URL}/api/generate",
@@ -402,6 +410,16 @@ STRICT RULES:
             except json.JSONDecodeError:
                 pass
 
+        # Use json-repair library to fix near-valid JSON from local models
+        # (missing commas, trailing commas, unquoted keys, etc.)
+        if _HAS_JSON_REPAIR:
+            try:
+                result = _repair_json_lib(cleaned, return_objects=True)
+                if result not in (None, "", [], {}):
+                    return result
+            except Exception:
+                pass
+
         # Gemini mocks and some providers occasionally return Python-literal-style
         # dicts/lists. Accept those as a fallback for robustness.
         try:
@@ -444,13 +462,20 @@ STRICT RULES:
         for day_index, day in enumerate(itinerary_data.get("itinerary", [])):
             if day_index >= len(polished_content):
                 continue
-            updates = polished_content[day_index].get("activities", [])
+            day_update = polished_content[day_index]
+            if not isinstance(day_update, dict):
+                log.warning(f"_merge_polish_updates: day {day_index} is {type(day_update).__name__}, skipping")
+                continue
+            updates = day_update.get("activities", [])
+            if not isinstance(updates, list):
+                continue
             for activity_index, activity in enumerate(day.get("activities", [])):
                 if activity_index >= len(updates):
                     continue
                 update = updates[activity_index]
-                # Fix 2: only write fields Gemini actually returned — never overwrite
-                # with hardcoded generic strings like "Perfect for your trip style"
+                if not isinstance(update, dict):
+                    continue
+                # Only write fields Gemini actually returned — never overwrite with empty strings
                 for field in ("description", "why_this_fits", "local_secret", "how_to_reach"):
                     val = update.get(field)
                     if val:

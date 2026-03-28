@@ -93,7 +93,11 @@ class RouteOptimizer:
             if lat is None or lng is None:
                 return None
             try:
-                return (float(lat), float(lng))
+                lat_f, lng_f = float(lat), float(lng)
+                # (0.0, 0.0) is the DB sentinel for "missing GPS" — treat as unknown
+                if lat_f == 0.0 and lng_f == 0.0:
+                    return None
+                return (lat_f, lng_f)
             except (TypeError, ValueError):
                 return None
 
@@ -104,19 +108,23 @@ class RouteOptimizer:
             matched = False
             for i, existing in enumerate(deduped):
                 ex_name = "".join(c for c in (getattr(existing, "name", "") or "").lower() if c.isalnum())[:14]
-                # Deduplicate on: same DB id, OR (name prefix match AND within 300m)
+                # Deduplicate on:
+                #  - same DB id, OR
+                #  - name prefix match AND within 300m  (same place, variant spelling)
+                #  - within 100m regardless of name     (Amer Fort / Amber Fort)
                 same_id = (
                     getattr(a, "id", None) is not None
                     and getattr(a, "id", None) == getattr(existing, "id", None)
                 )
                 same_name = a_name[:10] == ex_name[:10] and len(a_name) >= 4
-                nearby = (
-                    a_coords is not None
-                    and _coords(existing) is not None
-                    and haversine_km(a_coords[0], a_coords[1],
-                                     _coords(existing)[0], _coords(existing)[1]) < 0.3
+                ex_coords = _coords(existing)
+                dist_km = (
+                    haversine_km(a_coords[0], a_coords[1], ex_coords[0], ex_coords[1])
+                    if a_coords and ex_coords else None
                 )
-                if same_id or (same_name and nearby):
+                nearby = dist_km is not None and dist_km < 0.3
+                very_close = dist_km is not None and dist_km < 0.1
+                if same_id or (same_name and nearby) or very_close:
                     if _desc_len(a) > _desc_len(existing):
                         deduped[i] = a
                     matched = True
