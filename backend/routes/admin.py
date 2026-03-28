@@ -32,10 +32,17 @@ def verify_key():
     if not compare_digest(key, expected_key):
         return jsonify({"error": "Invalid key"}), 401
     
-    # Return a JWT token with the admin role claim
+    # Issue a short-lived token with a unique jti for audit trail.
+    # Each token carries a unique session ID so admin actions can be traced per token.
+    import secrets as _secrets
+    from datetime import timedelta
     from flask_jwt_extended import create_access_token
-    token = create_access_token(identity="admin_user", additional_claims={"role": "admin"})
-    
+    token = create_access_token(
+        identity=f"admin_{_secrets.token_hex(8)}",
+        expires_delta=timedelta(minutes=60),
+        additional_claims={"role": "admin", "jti": _secrets.token_hex(16)},
+    )
+
     return jsonify({
         "message": "Valid admin key",
         "token": token
@@ -260,3 +267,108 @@ def delete_user(user_id):
     db.session.delete(user)
     db.session.commit()
     return jsonify({"message": "User and their trips deleted"}), 200
+
+
+# ── Feature Flags CRUD ───────────────────────────────────────────────────────
+
+
+@admin_bp.route('/api/admin/feature-flags', methods=['GET'])
+@require_admin
+def list_feature_flags():
+    """List all feature flags."""
+    from backend.models import FeatureFlag
+    flags = db.session.query(FeatureFlag).order_by(FeatureFlag.flag_key.asc()).all()
+    return jsonify({
+        "flags": [_serialize_flag(f) for f in flags],
+        "total": len(flags),
+    }), 200
+
+
+@admin_bp.route('/api/admin/feature-flags', methods=['POST'])
+@require_admin
+def create_feature_flag():
+    """Create a new feature flag."""
+    from backend.models import FeatureFlag
+    body = request.get_json() or {}
+    flag_key = (body.get("flag_key") or "").strip()
+    if not flag_key:
+        return jsonify({"error": "flag_key is required"}), 400
+    if len(flag_key) > 100:
+        return jsonify({"error": "flag_key must be under 100 characters"}), 400
+
+    existing = db.session.query(FeatureFlag).filter_by(flag_key=flag_key).first()
+    if existing:
+        return jsonify({"error": f"Flag '{flag_key}' already exists. Use PATCH to update."}), 409
+
+    try:
+        flag = FeatureFlag(
+            flag_key=flag_key,
+            is_active=1 if body.get("is_active") else 0,
+            traffic_pct=min(100, max(0, int(body.get("traffic_pct", 100)))),
+            details=body.get("details"),
+        )
+        db.session.add(flag)
+        db.session.commit()
+        _invalidate_flag_cache(flag_key)
+        return jsonify({"flag": _serialize_flag(flag), "message": "Feature flag created."}), 201
+    except Exception:
+        db.session.rollback()
+        return jsonify({"error": "Internal server error"}), 500
+
+
+@admin_bp.route('/api/admin/feature-flags/<flag_key>', methods=['PATCH'])
+@require_admin
+def update_feature_flag(flag_key: str):
+    """Toggle or update a feature flag."""
+    from backend.models import FeatureFlag
+    flag = db.session.query(FeatureFlag).filter_by(flag_key=flag_key).first()
+    if not flag:
+        return jsonify({"error": "Flag not found"}), 404
+
+    body = request.get_json() or {}
+    try:
+        if "is_active" in body:
+            flag.is_active = 1 if body["is_active"] else 0
+        if "traffic_pct" in body:
+            flag.traffic_pct = min(100, max(0, int(body["traffic_pct"])))
+        if "details" in body:
+            flag.details = body["details"]
+        db.session.commit()
+        _invalidate_flag_cache(flag_key)
+        return jsonify({"flag": _serialize_flag(flag), "message": "Flag updated."}), 200
+    except Exception:
+        db.session.rollback()
+        return jsonify({"error": "Internal server error"}), 500
+
+
+@admin_bp.route('/api/admin/feature-flags/<flag_key>', methods=['DELETE'])
+@require_admin
+def delete_feature_flag(flag_key: str):
+    """Delete a feature flag."""
+    from backend.models import FeatureFlag
+    flag = db.session.query(FeatureFlag).filter_by(flag_key=flag_key).first()
+    if not flag:
+        return jsonify({"error": "Flag not found"}), 404
+    db.session.delete(flag)
+    db.session.commit()
+    _invalidate_flag_cache(flag_key)
+    return jsonify({"message": f"Flag '{flag_key}' deleted."}), 200
+
+
+def _serialize_flag(flag) -> dict:
+    return {
+        "id": flag.id,
+        "flag_key": flag.flag_key,
+        "is_active": bool(flag.is_active),
+        "traffic_pct": flag.traffic_pct,
+        "details": flag.details,
+        "created_at": flag.created_at.isoformat() if flag.created_at else None,
+    }
+
+
+def _invalidate_flag_cache(flag_key: str):
+    try:
+        from backend.services.feature_flags import invalidate
+        invalidate(flag_key)
+    except Exception:
+        pass

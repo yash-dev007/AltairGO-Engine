@@ -1,7 +1,6 @@
-import os
 from uuid import uuid4
 
-from flask import Blueprint, current_app, jsonify, request, g
+from flask import Blueprint, jsonify, request, g
 from flask_jwt_extended import get_jwt_identity, jwt_required, verify_jwt_in_request
 import structlog
 
@@ -109,12 +108,11 @@ def generate_itinerary():
 
         return jsonify({"job_id": job_id, "status": "queued"}), 202
 
-    except Exception as exc:
+    except Exception:
         db.session.rollback()
         log.exception("itinerary.generation_failed")
-        error_msg = str(exc) if os.getenv("TESTING") == "true" else "Internal server error"
         return jsonify({
-            "error": error_msg,
+            "error": "Internal server error",
             "request_id": getattr(g, "request_id", None)
         }), 500
 
@@ -143,7 +141,6 @@ def generate_variants():
         except Exception:
             pass
 
-        from backend.services.gemini_service import get_gemini_service as _get_gs
         orchestrator = TripGenerationOrchestrator(
             db_session=db.session,
             gemini_service=GEMINI_SERVICE,
@@ -152,12 +149,11 @@ def generate_variants():
 
         return jsonify({"variants": variants}), 200
 
-    except Exception as exc:
+    except Exception:
         db.session.rollback()
         log.exception("variants.generation_failed")
-        error_msg = str(exc) if os.getenv("TESTING") == "true" else "Internal server error"
         return jsonify({
-            "error": error_msg,
+            "error": "Internal server error",
             "request_id": getattr(g, "request_id", None),
         }), 500
 
@@ -169,6 +165,17 @@ def get_itinerary_status(job_id):
         job = db.session.get(AsyncJob, job_id)
         if not job:
             return jsonify({"error": "Job not found"}), 404
+
+        # Ownership check: if the job was created by a logged-in user, only that
+        # user may poll it. Anonymous jobs (user_id=None) remain publicly accessible.
+        if job.user_id is not None:
+            try:
+                verify_jwt_in_request(optional=True)
+                caller_id = get_jwt_identity()
+                if caller_id is None or int(caller_id) != job.user_id:
+                    return jsonify({"error": "Job not found"}), 404
+            except Exception:
+                return jsonify({"error": "Job not found"}), 404
 
         body = {
             "job_id": job.id,
@@ -185,6 +192,107 @@ def get_itinerary_status(job_id):
             "error": "Internal server error",
             "request_id": getattr(g, "request_id", None)
         }), 500
+
+
+@trips_bp.route("/get-itinerary-status/<job_id>/stream", methods=["GET"])
+def stream_itinerary_status(job_id):
+    """
+    SSE endpoint that pushes a single event when the job completes or fails.
+    Eliminates the need for the frontend to poll GET /get-itinerary-status.
+
+    Emits: data: {"job_id": "...", "status": "completed"|"failed"}
+
+    Falls back to periodic DB checks when Redis is unavailable.
+    """
+    import json
+    import time
+    from flask import Response, stream_with_context
+    from backend.services.metrics_service import get_metrics_redis
+
+    # Validate job existence and ownership before opening the stream
+    try:
+        job = db.session.get(AsyncJob, job_id)
+        if not job:
+            return jsonify({"error": "Job not found"}), 404
+
+        if job.user_id is not None:
+            try:
+                verify_jwt_in_request(optional=True)
+                caller_id = get_jwt_identity()
+                if caller_id is None or int(caller_id) != job.user_id:
+                    return jsonify({"error": "Job not found"}), 404
+            except Exception:
+                return jsonify({"error": "Job not found"}), 404
+    except Exception:
+        return jsonify({"error": "Internal server error"}), 500
+
+    def generate():
+        # If already terminal, emit immediately and close
+        current_job = db.session.get(AsyncJob, job_id)
+        if current_job and current_job.status in ("completed", "failed"):
+            evt = {"job_id": job_id, "status": current_job.status}
+            if current_job.status == "completed" and current_job.result:
+                evt["result"] = current_job.result
+            if current_job.status == "failed" and current_job.error_message:
+                evt["error_message"] = current_job.error_message
+            yield f"data: {json.dumps(evt)}\n\n"
+            return
+
+        client = get_metrics_redis()
+        stream_key = f"job:events:{job_id}"
+        last_id = "0"
+        max_wait = 120  # 2 minute ceiling
+        start = time.monotonic()
+
+        if client:
+            # Redis path: subscribe to the job event stream
+            while time.monotonic() - start < max_wait:
+                try:
+                    events = client.xread({stream_key: last_id}, count=10, block=3000)
+                except Exception:
+                    yield f"data: {json.dumps({'heartbeat': True})}\n\n"
+                    continue
+
+                if not events:
+                    yield f"data: {json.dumps({'job_id': job_id, 'status': 'processing', 'heartbeat': True})}\n\n"
+                    continue
+
+                for _stream, messages in events:
+                    for msg_id, payload in messages:
+                        last_id = msg_id
+                        data = dict(payload)
+                        # Enrich terminal events with result/error from DB
+                        if data.get("status") == "completed":
+                            terminal_job = db.session.get(AsyncJob, job_id)
+                            if terminal_job and terminal_job.result:
+                                data["result"] = terminal_job.result
+                        elif data.get("status") == "failed":
+                            terminal_job = db.session.get(AsyncJob, job_id)
+                            if terminal_job and terminal_job.error_message:
+                                data["error_message"] = terminal_job.error_message
+                        yield f"data: {json.dumps(data)}\n\n"
+                        if data.get("status") in ("completed", "failed"):
+                            return
+        else:
+            # Fallback: poll DB every second
+            for _ in range(max_wait):
+                time.sleep(1)
+                polled = db.session.get(AsyncJob, job_id)
+                if polled and polled.status in ("completed", "failed"):
+                    evt = {"job_id": job_id, "status": polled.status}
+                    if polled.status == "completed" and polled.result:
+                        evt["result"] = polled.result
+                    if polled.status == "failed" and polled.error_message:
+                        evt["error_message"] = polled.error_message
+                    yield f"data: {json.dumps(evt)}\n\n"
+                    return
+                yield f"data: {json.dumps({'job_id': job_id, 'status': 'processing', 'heartbeat': True})}\n\n"
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @trips_bp.route("/api/save-trip", methods=["POST"])

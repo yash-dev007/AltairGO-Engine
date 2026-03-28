@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from flask import Blueprint, Response, current_app, jsonify, stream_with_context
 
 from backend.database import db
-from backend.models import AnalyticsEvent, AttractionSignal, Destination, DestinationRequest, Trip, User
+from backend.models import AnalyticsEvent, AttractionSignal, DataSourceLog, Destination, DestinationRequest, Trip, User
 from backend.services.metrics_service import get_metric, get_metrics_redis
 from backend.utils.auth import require_admin
 
@@ -76,6 +76,36 @@ def ops_summary():
             "result": _metric_json(f"celery:{task_name}:last_result", default=None),
         }
 
+    # ── DataSourceLog: last run per task name ─────────────────────────────────
+    from sqlalchemy import func as sql_func
+
+    datasource_subq = (
+        db.session.query(
+            DataSourceLog.source_name,
+            sql_func.max(DataSourceLog.created_at).label("latest"),
+        )
+        .group_by(DataSourceLog.source_name)
+        .subquery()
+    )
+    recent_logs = (
+        db.session.query(DataSourceLog)
+        .join(
+            datasource_subq,
+            (DataSourceLog.source_name == datasource_subq.c.source_name)
+            & (DataSourceLog.created_at == datasource_subq.c.latest),
+        )
+        .all()
+    )
+    job_health = {
+        row.source_name: {
+            "last_run": row.created_at.isoformat() if row.created_at else None,
+            "status": row.status,
+            "event_type": row.event_type,
+            "details": row.details,
+        }
+        for row in recent_logs
+    }
+
     return jsonify({
         "gemini": {
             "calls_today": gemini_calls_today,
@@ -110,6 +140,7 @@ def ops_summary():
         },
         "agents": agents,
         "celery_tasks": celery_tasks,
+        "job_health": job_health,
     }), 200
 
 

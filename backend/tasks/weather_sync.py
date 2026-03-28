@@ -124,6 +124,16 @@ def sync_weather_alerts() -> dict:
             wind_list:   list = daily.get("wind_gusts_10m_max") or []
             heat_list:   list = daily.get("temperature_2m_max") or []
 
+            # Pre-load all existing alerts for this destination in one query
+            # so we avoid one SELECT per (date, alert_type) combination.
+            existing_alerts = db.query(WeatherAlert).filter(
+                WeatherAlert.destination_id == dest.id,
+                WeatherAlert.alert_date.in_(dates),
+            ).all()
+            existing_map: dict[tuple, WeatherAlert] = {
+                (a.alert_date, a.alert_type): a for a in existing_alerts
+            }
+
             for i, date_str in enumerate(dates):
                 alerts_to_write = []
 
@@ -154,22 +164,19 @@ def sync_weather_alerts() -> dict:
                             "type": "extreme_heat",
                             "severity": sev,
                             "probability_pct": None,
-                            "description": f"Max temperature {heat_list[i]:.1f}°C forecast.",
+                            "description": f"Max temperature {heat_list[i]:.1f}C forecast.",
                         })
 
                 for alert_data in alerts_to_write:
-                    existing = db.query(WeatherAlert).filter_by(
-                        destination_id=dest.id,
-                        alert_date=date_str,
-                        alert_type=alert_data["type"],
-                    ).first()
+                    key = (date_str, alert_data["type"])
+                    existing = existing_map.get(key)
                     if existing:
                         existing.severity = alert_data["severity"]
                         existing.description = alert_data["description"]
                         existing.expires_at = expiry_threshold
                         updated += 1
                     else:
-                        db.add(WeatherAlert(
+                        new_alert = WeatherAlert(
                             destination_id=dest.id,
                             alert_date=date_str,
                             alert_type=alert_data["type"],
@@ -178,7 +185,9 @@ def sync_weather_alerts() -> dict:
                             description=alert_data["description"],
                             source="open_meteo",
                             expires_at=expiry_threshold,
-                        ))
+                        )
+                        db.add(new_alert)
+                        existing_map[key] = new_alert
                         created += 1
 
         db.commit()

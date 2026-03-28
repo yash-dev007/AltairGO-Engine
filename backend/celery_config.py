@@ -83,6 +83,14 @@ if not TESTING and not DEV_EAGER:
             "task": "backend.celery_tasks.run_weather_sync",
             "schedule": crontab(hour=5, minute=30),  # After price sync, before cache warm
         },
+        "generate-post-trip-summaries-daily": {
+            "task": "backend.celery_tasks.run_post_trip_summaries",
+            "schedule": crontab(hour=6, minute=30),  # After weather sync
+        },
+        "sync-embeddings-weekly": {
+            "task": "backend.celery_tasks.run_embedding_sync",
+            "schedule": crontab(hour=4, minute=0, day_of_week="tuesday"),  # After enrichment
+        },
     }
 else:
     celery_app.conf.beat_schedule = {}

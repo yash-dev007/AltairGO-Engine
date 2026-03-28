@@ -22,6 +22,26 @@ from backend.utils.helpers import _extract_destination_names, _is_truthy
 
 log = logging.getLogger(__name__)
 
+# Month name / number → 3-letter key used in seasonal_score JSON
+_MONTH_TO_KEY = {
+    "1": "jan", "2": "feb", "3": "mar", "4": "apr", "5": "may", "6": "jun",
+    "7": "jul", "8": "aug", "9": "sep", "10": "oct", "11": "nov", "12": "dec",
+    "january": "jan", "february": "feb", "march": "mar", "april": "apr",
+    "may": "may", "june": "jun", "july": "jul", "august": "aug",
+    "september": "sep", "october": "oct", "november": "nov", "december": "dec",
+    "jan": "jan", "feb": "feb", "mar": "mar", "apr": "apr",
+    "jun": "jun", "jul": "jul", "aug": "aug", "sep": "sep",
+    "oct": "oct", "nov": "nov", "dec": "dec",
+}
+
+
+def _normalize_travel_month(raw) -> str:
+    """Convert any travel_month representation to 3-letter lowercase key or 'any'."""
+    if not raw or raw == "any":
+        return "any"
+    return _MONTH_TO_KEY.get(str(raw).lower().strip(), "any")
+
+
 # Cap attraction rows loaded per generation to prevent OOM on large DB imports.
 # Ordered by popularity_score DESC so the best attractions are always included.
 _MAX_ATTRACTIONS = int(os.getenv("MAX_ATTRACTIONS_PER_GENERATION", "500"))
@@ -84,11 +104,27 @@ class TripGenerationOrchestrator:
 
         # Resolve trip duration and start date early — needed for POIClosure filtering
         num_days = request_data["duration"]
-        base_date_str = request_data.get("start_date", "2026-01-01")
+        base_date_str = request_data.get("start_date", "")
         try:
             base_date = datetime.strptime(base_date_str, "%Y-%m-%d")
-        except ValueError:
-            base_date = datetime(2026, 1, 1)
+        except (ValueError, TypeError):
+            # No explicit start_date — derive from travel_month so event/weather
+            # queries use the correct calendar window instead of a fixed default.
+            today = datetime.today()
+            month_key = _normalize_travel_month(request_data.get("travel_month"))
+            _KEY_TO_NUM = {v: i + 1 for i, v in enumerate(
+                ["jan", "feb", "mar", "apr", "may", "jun",
+                 "jul", "aug", "sep", "oct", "nov", "dec"]
+            )}
+            travel_month = _KEY_TO_NUM.get(month_key, 0)
+            if 1 <= travel_month <= 12:
+                year = today.year if travel_month >= today.month else today.year + 1
+                # Use the 10th as the default day so mid-month events (festivals, etc.)
+                # fall within the trip window when no exact start_date is given.
+                base_date = datetime(year, travel_month, 10)
+            else:
+                base_date = today.replace(day=1)
+        base_date_str = base_date.strftime("%Y-%m-%d")
 
         # ── POIClosure: remove attractions closed during the travel window ────
         trip_end_date = base_date + timedelta(days=num_days - 1)
@@ -147,7 +183,7 @@ class TripGenerationOrchestrator:
         user_prefs = {
             "budget_tier": request_data.get("style", "mid"),
             "traveler_type": request_data.get("traveler_type", "couple"),
-            "travel_month": request_data.get("travel_month", "any"),
+            "travel_month": _normalize_travel_month(request_data.get("travel_month")),
             "daily_activity_budget": request_data["budget"] * 0.2 / request_data["duration"],
             # Pass declared interests so FilterEngine can boost matching attraction types
             "interests": request_data.get("interests", []) or [],
@@ -382,13 +418,15 @@ class TripGenerationOrchestrator:
             except Exception as e:
                 log.warning(f"DestinationInfo fetch failed: {e}")
 
+        # Pre-compute travel-window date strings — used by both local_events and weather_alerts.
+        date_strs = [
+            (base_date + timedelta(days=i)).strftime("%Y-%m-%d")
+            for i in range(num_days)
+        ]
+
         # ── Local events & festivals during travel window ─────────────────────
         if primary_destination:
             try:
-                date_strs = [
-                    (base_date + timedelta(days=i)).strftime("%Y-%m-%d")
-                    for i in range(num_days)
-                ]
                 trip_end_str = (base_date + timedelta(days=num_days - 1)).strftime("%Y-%m-%d")
                 local_events = (
                     self.db.query(LocalEvent)
@@ -402,13 +440,16 @@ class TripGenerationOrchestrator:
                     .all()
                 )
                 if local_events:
+                    def _date_str(v):
+                        return v.isoformat() if hasattr(v, "isoformat") else (v or None)
+
                     events_payload = [
                         {
                             "name": ev.name,
                             "description": ev.description,
                             "type": ev.event_type,
-                            "start_date": ev.start_date,
-                            "end_date": ev.end_date,
+                            "start_date": _date_str(ev.start_date),
+                            "end_date": _date_str(ev.end_date),
                             "impact": ev.impact,
                             "tips": ev.tips,
                         }
@@ -420,14 +461,14 @@ class TripGenerationOrchestrator:
                     if avoid_events:
                         for ev in avoid_events:
                             itinerary.setdefault("_validation_warnings", []).append(
-                                f"⚠ '{ev.name}' ({ev.start_date}) may cause crowds or closures. "
+                                f"WARNING: '{ev.name}' ({ev.start_date}) may cause crowds or closures. "
                                 + (ev.tips or "Plan accordingly.")
                             )
                     # Surface positive festival highlights
                     positive_events = [ev for ev in local_events if ev.impact == "positive"]
                     if positive_events:
                         itinerary.setdefault("smart_insights", []).extend([
-                            f"🎉 {ev.name} ({ev.start_date}): {ev.description or 'Local festival happening during your visit!'}"
+                            f"EVENT: {ev.name} ({ev.start_date}): {ev.description or 'Local festival happening during your visit!'}"
                             for ev in positive_events[:3]
                         ])
             except Exception as e:
@@ -451,10 +492,6 @@ class TripGenerationOrchestrator:
         weather_alerts_by_date: dict[str, dict] = {}
         if primary_destination:
             try:
-                date_strs = [
-                    (base_date + timedelta(days=i)).strftime("%Y-%m-%d")
-                    for i in range(num_days)
-                ]
                 alerts = (
                     self.db.query(WeatherAlert)
                     .filter(
@@ -546,8 +583,10 @@ class TripGenerationOrchestrator:
             except Exception as e:
                 log.warning(f"Currency conversion failed: {e}")
 
-        # Fix 8: polish_itinerary_text mutates itinerary in-place and returns it.
-        # No need for the redundant _merge_polished_itinerary deep-copy wrapper.
+        # polish_itinerary_text mutates itinerary in-place via _merge_polish_updates.
+        # Take a deepcopy after polish so the validator and cache operate on an
+        # independent copy and cannot observe partially-mutated state.
+        import copy
         if self.gemini:
             gemini_started = time.monotonic()
             itinerary = self.gemini.polish_itinerary_text(
@@ -559,6 +598,7 @@ class TripGenerationOrchestrator:
                     "travel_month": request_data.get("travel_month"),
                 },
             )
+            itinerary = copy.deepcopy(itinerary)
             timings["gemini_ms"] = int((time.monotonic() - gemini_started) * 1000)
 
         validator_started = time.monotonic()
@@ -621,9 +661,12 @@ class TripGenerationOrchestrator:
                 )
                 variant["_variant"] = variant_name
                 variants[variant_name] = variant
-            except Exception as exc:
-                log.warning(f"generate_variants: '{variant_name}' failed — {exc}")
+            except (ValueError, RuntimeError) as exc:
+                log.warning("generate_variants.variant_failed", variant=variant_name, error=str(exc))
                 variants[variant_name] = {"error": str(exc), "_variant": variant_name}
+            except Exception:
+                log.exception("generate_variants.unexpected_error", variant=variant_name)
+                raise
 
         return variants
 

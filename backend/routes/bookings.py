@@ -25,7 +25,6 @@ Booking automation flow for a saved trip:
        marks the booking as 'booked' with a simulated reference.
 """
 
-import secrets
 from datetime import datetime, date, timedelta, timezone
 from math import ceil
 from uuid import uuid4
@@ -33,13 +32,49 @@ from uuid import uuid4
 import structlog
 from flask import Blueprint, jsonify, request, g
 from flask_jwt_extended import get_jwt_identity, jwt_required
+from backend.extensions import limiter
 
-from backend.constants import OCCUPANCY_PER_ROOM
+from backend.constants import (
+    AIRPORT_TRANSFER_ESTIMATE_INR,
+    DAILY_CAB_ESTIMATE_INR,
+    OCCUPANCY_PER_ROOM,
+)
 from backend.database import db
 from backend.models import Booking, FlightRoute, Trip, TripPermissionRequest
 
 bookings_bp = Blueprint("bookings", __name__)
 log = structlog.get_logger(__name__)
+
+# Domain allowlist for booking URLs — reject anything not on this list
+_ALLOWED_BOOKING_DOMAINS = frozenset({
+    "booking.com", "hotels.com", "agoda.com",
+    "makemytrip.com", "cleartrip.com", "goibibo.com",
+    "klook.com", "insider.in", "dineout.co.in", "zomato.com",
+    "ola.com", "uber.com", "rapido.bike",
+})
+
+
+def _validate_booking_url(url: str | None) -> str:
+    """Return url only if it belongs to an allowed booking domain, else empty string."""
+    if not url:
+        return ""
+    try:
+        from urllib.parse import urlparse
+        parsed = urlparse(url)
+        host = parsed.netloc.lower().lstrip("www.")
+        if any(host == d or host.endswith("." + d) for d in _ALLOWED_BOOKING_DOMAINS):
+            return url
+    except Exception:
+        pass
+    return ""
+
+
+def _safe_user_id() -> int | None:
+    """Parse JWT identity as int, return None on failure."""
+    try:
+        return int(get_jwt_identity())
+    except (TypeError, ValueError):
+        return None
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -165,9 +200,9 @@ def _build_booking_items(trip: Trip) -> list[dict]:
             "booking_url": "",
             "start_datetime": start_date.isoformat(),
             "end_datetime": start_date.isoformat(),
-            "price_inr": 600,          # conservative estimate; actual depends on distance
+            "price_inr": AIRPORT_TRANSFER_ESTIMATE_INR,
             "num_travelers": num_travelers,
-            "total_price_inr": 600 * num_travelers,
+            "total_price_inr": AIRPORT_TRANSFER_ESTIMATE_INR * num_travelers,
             "payload": {"transfer_type": "arrival", "tip": "Pre-book via app to avoid inflated fares."},
         })
 
@@ -231,9 +266,9 @@ def _build_booking_items(trip: Trip) -> list[dict]:
                 "booking_url": "",
                 "start_datetime": day_date.isoformat(),
                 "end_datetime": day_date.isoformat(),
-                "price_inr": 300,          # per-traveler estimate; real fare depends on route
+                "price_inr": DAILY_CAB_ESTIMATE_INR,
                 "num_travelers": num_travelers,
-                "total_price_inr": 300 * num_travelers,
+                "total_price_inr": DAILY_CAB_ESTIMATE_INR * num_travelers,
                 "payload": {
                     "day": day.get("day"),
                     "activity_count": activity_count,
@@ -251,9 +286,9 @@ def _build_booking_items(trip: Trip) -> list[dict]:
             "booking_url": "",
             "start_datetime": departure_date.isoformat(),
             "end_datetime": departure_date.isoformat(),
-            "price_inr": 600,
+            "price_inr": AIRPORT_TRANSFER_ESTIMATE_INR,
             "num_travelers": num_travelers,
-            "total_price_inr": 600 * num_travelers,
+            "total_price_inr": AIRPORT_TRANSFER_ESTIMATE_INR * num_travelers,
             "payload": {
                 "transfer_type": "departure",
                 "tip": "Allow 2.5–3 hours before flight. Book the night before.",
@@ -274,7 +309,9 @@ def create_booking_plan(trip_id: int):
     bookable items. If a plan already exists for this trip it is returned
     without creating duplicates.
     """
-    user_id = int(get_jwt_identity())
+    user_id = _safe_user_id()
+    if user_id is None:
+        return jsonify({"error": "Unauthorized"}), 401
 
     try:
         trip = db.session.get(Trip, trip_id)
@@ -328,7 +365,7 @@ def create_booking_plan(trip_id: int):
                 booking_type=item["type"],
                 item_name=item["item_name"],
                 provider=item.get("provider"),
-                booking_url=item.get("booking_url"),
+                booking_url=_validate_booking_url(item.get("booking_url")),
                 start_datetime=_parse_dt(item.get("start_datetime")),
                 end_datetime=_parse_dt(item.get("end_datetime")),
                 price_inr=item["price_inr"],
@@ -343,10 +380,7 @@ def create_booking_plan(trip_id: int):
 
         db.session.commit()
 
-        log.info(
-            f"BookingPlan created for trip {trip_id}: "
-            f"{len(booking_rows)} items, ₹{total_cost} total"
-        )
+        log.info("booking_plan.created", trip_id=trip_id, items=len(booking_rows), total_cost=total_cost)
 
         return jsonify({
             "permission_request_id": perm_id,
@@ -369,7 +403,9 @@ def create_booking_plan(trip_id: int):
 @jwt_required()
 def get_booking_plan(trip_id: int):
     """Fetch the latest booking plan for a trip."""
-    user_id = int(get_jwt_identity())
+    user_id = _safe_user_id()
+    if user_id is None:
+        return jsonify({"error": "Unauthorized"}), 401
 
     try:
         trip = db.session.get(Trip, trip_id)
@@ -404,6 +440,9 @@ def get_booking_plan(trip_id: int):
         return jsonify({"error": "Internal server error", "request_id": getattr(g, "request_id", None)}), 500
 
 
+_MAX_DECISIONS = 500  # Maximum booking IDs accepted in a single respond call
+
+
 @bookings_bp.route("/api/trip/<int:trip_id>/booking-plan/respond", methods=["POST"])
 @jwt_required()
 def respond_to_booking_plan(trip_id: int):
@@ -412,15 +451,27 @@ def respond_to_booking_plan(trip_id: int):
 
     Body: {"decisions": {"<booking_id>": true, "<booking_id2>": false, ...}}
 
-    true  = approved → Booking.user_approved = 1, status = "approved"
-    false = rejected → Booking.user_approved = -1, status = "rejected"
+    true  = approved -> Booking.user_approved = 1, status = "approved"
+    false = rejected -> Booking.user_approved = -1, status = "rejected"
     """
-    user_id = int(get_jwt_identity())
+    try:
+        user_id = int(get_jwt_identity())
+    except (TypeError, ValueError):
+        return jsonify({"error": "Unauthorized"}), 401
+
     body = request.get_json() or {}
-    decisions: dict = body.get("decisions", {})
+    decisions = body.get("decisions", {})
 
     if not decisions:
         return jsonify({"error": "'decisions' dict is required"}), 400
+    if not isinstance(decisions, dict):
+        return jsonify({"error": "'decisions' must be an object"}), 400
+    if len(decisions) > _MAX_DECISIONS:
+        return jsonify({"error": f"Too many decisions; maximum is {_MAX_DECISIONS}"}), 400
+    # Validate all values are booleans
+    invalid = [k for k, v in decisions.items() if not isinstance(v, bool)]
+    if invalid:
+        return jsonify({"error": "All decision values must be boolean (true/false)"}), 400
 
     try:
         trip = db.session.get(Trip, trip_id)
@@ -440,9 +491,22 @@ def respond_to_booking_plan(trip_id: int):
         rejected_count = 0
         not_found = []
 
+        # Load all booking IDs in one query to avoid N+1
+        booking_ids = list(decisions.keys())
+        bookings_batch = (
+            db.session.query(Booking)
+            .filter(
+                Booking.id.in_(booking_ids),
+                Booking.trip_id == trip_id,
+                Booking.permission_request_id == perm_req.id,
+            )
+            .all()
+        )
+        booking_map = {b.id: b for b in bookings_batch}
+
         for booking_id, approved in decisions.items():
-            booking = db.session.get(Booking, booking_id)
-            if not booking or booking.trip_id != trip_id or booking.permission_request_id != perm_req.id:
+            booking = booking_map.get(booking_id)
+            if not booking:
                 not_found.append(booking_id)
                 continue
             if approved:
@@ -477,8 +541,12 @@ def respond_to_booking_plan(trip_id: int):
         db.session.commit()
 
         log.info(
-            f"BookingPlan {perm_req.id}: {n_approved} approved, {n_rejected} rejected "
-            f"of {total} total. Status → {perm_req.status}"
+            "booking_plan.respond",
+            perm_id=perm_req.id,
+            approved=n_approved,
+            rejected=n_rejected,
+            total=total,
+            status=perm_req.status,
         )
 
         return jsonify({
@@ -506,11 +574,13 @@ def execute_booking(booking_id: str):
     """
     Execute a single approved booking.
 
-    In production this calls the vendor API (Booking.com, MakeMyTrip, etc.).
-    Currently marks the booking as 'booked' with a simulated reference so
-    the full flow can be tested end-to-end before vendor integrations are live.
+    NOTE: Vendor SDK integrations are pending. Currently simulates a confirmed
+    reference so the full flow can be tested end-to-end. All responses include
+    "simulated": true until real vendor calls are wired in.
     """
-    user_id = int(get_jwt_identity())
+    user_id = _safe_user_id()
+    if user_id is None:
+        return jsonify({"error": "Unauthorized"}), 401
 
     try:
         booking = db.session.get(Booking, booking_id)
@@ -528,29 +598,41 @@ def execute_booking(booking_id: str):
                 "message": "Already booked.",
             }), 200
 
-        # ── Vendor API call placeholder ───────────────────────────────────────
-        # TODO: integrate vendor SDKs here per booking_type:
-        #   hotel    → Booking.com Affiliate API
-        #   flight   → MakeMyTrip / Cleartrip API
-        #   activity → ASI Portal / Klook API
-        #   restaurant → Dineout / Zomato API
-        #   cab      → Ola / Uber API
-        #
-        # For now: simulate a successful booking with a random reference.
-        booking_ref = f"ALTAIR-{booking.booking_type.upper()[:3]}-{secrets.token_hex(4).upper()}"
+        # Delegate to provider registry — hotel uses BookingComProvider (affiliate link),
+        # all other types fall back to SimulatedProvider until vendor SDKs are integrated.
+        from backend.services.booking_providers import get_provider
+        provider = get_provider(booking.booking_type)
+        result = provider.execute(booking)
+
+        if not result.success:
+            booking.status = "failed"
+            booking.failure_reason = result.error or "Provider returned failure"
+            db.session.commit()
+            return jsonify({
+                "booking_id": booking_id,
+                "status": "failed",
+                "message": result.error or "Booking failed",
+            }), 502
+
         booking.status = "booked"
-        booking.booking_ref = booking_ref
+        booking.booking_ref = result.booking_ref
+        if result.booking_url:
+            booking.booking_url = _validate_booking_url(result.booking_url)
         db.session.commit()
 
-        log.info(f"Booking {booking_id} executed. Ref: {booking_ref}")
+        log.info("booking.executed", booking_id=booking_id, ref=result.booking_ref, simulated=result.simulated)
 
         return jsonify({
             "booking_id": booking_id,
             "status": "booked",
-            "booking_ref": booking_ref,
+            "booking_ref": result.booking_ref,
             "item_name": booking.item_name,
             "booking_url": booking.booking_url,
-            "message": f"✓ {booking.item_name} booked successfully. Reference: {booking_ref}",
+            "simulated": result.simulated,
+            "message": (
+                f"{booking.item_name} booking confirmed. Reference: {result.booking_ref}"
+                + (" (simulated)" if result.simulated else "")
+            ),
         }), 200
 
     except Exception:
@@ -561,14 +643,18 @@ def execute_booking(booking_id: str):
 
 @bookings_bp.route("/api/trip/<int:trip_id>/booking-plan/execute-all", methods=["POST"])
 @jwt_required()
+@limiter.limit("5 per minute")
 def execute_all_bookings(trip_id: int):
     """
     Execute ALL approved bookings for a trip in one call.
 
     Only bookings with user_approved=1 and status="approved" are executed.
     Returns a summary of booked / failed counts plus individual results.
+    NOTE: responses include "simulated": true until vendor SDKs are integrated.
     """
-    user_id = int(get_jwt_identity())
+    user_id = _safe_user_id()
+    if user_id is None:
+        return jsonify({"error": "Unauthorized"}), 401
 
     try:
         trip = db.session.get(Trip, trip_id)
@@ -596,16 +682,35 @@ def execute_all_bookings(trip_id: int):
                 "failed": 0,
             }), 200
 
+        from backend.services.booking_providers import get_provider
+
         booked, failed = 0, 0
+        any_real = False
         results = []
         for booking in approved_bookings:
             try:
-                # Vendor API placeholder — simulate a confirmed reference
-                ref = f"ALTAIR-{booking.booking_type.upper()[:3]}-{secrets.token_hex(4).upper()}"
-                booking.status = "booked"
-                booking.booking_ref = ref
-                booked += 1
-                results.append({"booking_id": booking.id, "item_name": booking.item_name, "ref": ref, "status": "booked"})
+                provider = get_provider(booking.booking_type)
+                result = provider.execute(booking)
+                if result.success:
+                    booking.status = "booked"
+                    booking.booking_ref = result.booking_ref
+                    if result.booking_url:
+                        booking.booking_url = _validate_booking_url(result.booking_url)
+                    booked += 1
+                    if not result.simulated:
+                        any_real = True
+                    results.append({
+                        "booking_id": booking.id,
+                        "item_name": booking.item_name,
+                        "ref": result.booking_ref,
+                        "status": "booked",
+                        "simulated": result.simulated,
+                    })
+                else:
+                    booking.status = "failed"
+                    booking.failure_reason = result.error
+                    failed += 1
+                    results.append({"booking_id": booking.id, "item_name": booking.item_name, "status": "failed"})
             except Exception as exc:
                 log.warning("booking.execute_single_failed", booking_id=booking.id, error=str(exc))
                 booking.status = "failed"
@@ -614,15 +719,18 @@ def execute_all_bookings(trip_id: int):
                 results.append({"booking_id": booking.id, "item_name": booking.item_name, "status": "failed"})
 
         db.session.commit()
-        log.info(f"ExecuteAll trip {trip_id}: {booked} booked, {failed} failed.")
+        log.info("booking.execute_all", trip_id=trip_id, booked=booked, failed=failed)
 
+        all_simulated = not any_real
         return jsonify({
             "trip_id": trip_id,
             "booked": booked,
             "failed": failed,
+            "simulated": all_simulated,
             "results": results,
             "message": (
-                f"✓ {booked} booking(s) confirmed successfully!"
+                f"{booked} booking(s) confirmed!"
+                + (" (simulated)" if all_simulated else "")
                 + (f" {failed} failed — check results for details." if failed else "")
             ),
         }), 200
@@ -640,7 +748,9 @@ def cancel_booking(booking_id: str):
     Cancel a booking.  Only bookings that are not yet 'booked' can be cancelled
     without a refund flow; booked items are marked 'cancelled' for vendor follow-up.
     """
-    user_id = int(get_jwt_identity())
+    user_id = _safe_user_id()
+    if user_id is None:
+        return jsonify({"error": "Unauthorized"}), 401
 
     try:
         booking = db.session.get(Booking, booking_id)
@@ -654,7 +764,7 @@ def cancel_booking(booking_id: str):
         booking.user_approved = -1
         db.session.commit()
 
-        log.info(f"Booking {booking_id} cancelled by user {user_id}.")
+        log.info("booking.cancelled", booking_id=booking_id, user_id=user_id)
 
         return jsonify({
             "booking_id": booking_id,
@@ -681,7 +791,9 @@ def list_trip_bookings(trip_id: int):
     List all bookings for a trip with their current statuses.
     Grouped by type for easy display in a booking dashboard.
     """
-    user_id = int(get_jwt_identity())
+    user_id = _safe_user_id()
+    if user_id is None:
+        return jsonify({"error": "Unauthorized"}), 401
 
     try:
         trip = db.session.get(Trip, trip_id)

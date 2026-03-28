@@ -30,8 +30,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s \
 
 EXPOSE 5000
 
-CMD ["gunicorn", "backend.app:create_app()", \
-     "--bind", "0.0.0.0:5000", \
-     "--workers", "4", \
-     "--timeout", "120", \
-     "--access-logfile", "-"]
+CMD ["gunicorn", "--config", "gunicorn.conf.py", "backend.app:create_app()"]

@@ -32,6 +32,7 @@ DAY_START_HOUR = 9                  # Default start hour for daily schedule
 DAY_START_HOUR_ARRIVAL = 15         # Arrival day: activities start at 3pm (after check-in)
 SUNRISE_MAX_HOUR = 7                # Attractions at/before this hour are "sunrise" spots
 MIN_TRAVEL_MINUTES = 10             # Minimum assumed travel time between any two spots
+FALLBACK_TRAVEL_MINUTES = 30        # Fallback travel time when coordinates are missing
 
 # ── Validation ────────────────────────────────────────────────────────
 MAX_ACTIVITIES_PER_DAY_WARN = 5     # Warn if a day has more than this many activities
@@ -64,6 +65,10 @@ PAGINATION_MAX_PAGE_SIZE = 200      # Hard cap on page_size in all list endpoint
 
 # ── Hotel occupancy ───────────────────────────────────────────────────
 OCCUPANCY_PER_ROOM = 2              # Assumed travelers per hotel room for cost estimation
+
+# ── Booking estimates (INR) ────────────────────────────────────────────────
+AIRPORT_TRANSFER_ESTIMATE_INR = 600  # Per-trip conservative estimate for airport <-> hotel cab
+DAILY_CAB_ESTIMATE_INR = 300         # Per-traveler daily cab estimate between attractions
 
 # ── Group discounts (INR; applied to activities budget) ───────────────
 GROUP_DISCOUNT_THRESHOLD_SM = 5   # 5–9 travelers: 10% off activity costs

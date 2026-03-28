@@ -16,17 +16,57 @@ import structlog
 log = structlog.get_logger(__name__)
 
 
+def _write_datasource_log(source_name: str, event_type: str, status: str, details: dict | None = None):
+    """Write a DataSourceLog entry in its own session so task failures don't suppress the log."""
+    try:
+        from backend.models import DataSourceLog
+        session = SessionLocal()
+        try:
+            entry = DataSourceLog(
+                source_name=source_name,
+                event_type=event_type,
+                status=status,
+                details=details or {},
+            )
+            session.add(entry)
+            session.commit()
+        except Exception:
+            session.rollback()
+        finally:
+            session.close()
+    except Exception:
+        pass  # Never let logging failure break the task
+
+
 def _run_and_record(task_name: str, fn):
+    _write_datasource_log(task_name, "start", "running")
     try:
         result = fn()
-        mark_status("celery", task_name, "ok", result if result is not None else {"status": "completed"})
+        details = result if isinstance(result, dict) else {"status": "completed"}
+        mark_status("celery", task_name, "ok", details)
+        _write_datasource_log(task_name, "complete", "ok", details)
         return result
     except Exception as exc:
-        mark_status("celery", task_name, "error", {"error": str(exc)})
+        error_details = {"error": str(exc)}
+        mark_status("celery", task_name, "error", error_details)
+        _write_datasource_log(task_name, "error", "error", error_details)
         raise
 
 
 from backend.utils.helpers import _is_truthy
+
+
+def _publish_job_event(job_id: str, status: str):
+    """Publish a job completion event to a Redis stream for SSE subscribers."""
+    try:
+        from backend.services.metrics_service import get_metrics_redis
+        client = get_metrics_redis()
+        if client:
+            stream_key = f"job:events:{job_id}"
+            client.xadd(stream_key, {"status": status, "job_id": job_id}, maxlen=100)
+            client.expire(stream_key, 3600)  # 1 hour TTL — subscriber must connect quickly
+    except Exception:
+        pass  # Never let SSE notification failure break the task
 
 
 @celery_app.task(name="backend.celery_tasks.run_osm_ingestion")
@@ -211,13 +251,16 @@ def generate_itinerary_job(job_id: str):
         result = orchestrator.generate(
             payload,
             request_user_id=job.user_id,
-            strict_validation=_is_truthy(os.getenv("VALIDATION_STRICT", False)),
+            strict_validation=_is_truthy(os.getenv("VALIDATION_STRICT", "false")),
         )
         elapsed = time.monotonic() - start_time
         from backend.services.metrics_service import record_generation_time
         record_generation_time(elapsed)
         
         set_cached(cache_prefs, result)
+
+        # Publish to job-specific Redis stream so SSE subscribers get instant notification
+        _publish_job_event(job_id, "completed")
 
         session.add(AnalyticsEvent(
             event_type="GenerateItinerary",
@@ -240,24 +283,46 @@ def generate_itinerary_job(job_id: str):
         job.error_message = None
         session.commit()
         return {"job_id": job_id, "status": "completed"}
-    except ValueError as exc:
-        session.rollback()
-        job = session.get(AsyncJob, job_id)
-        if job:
-            job.status = "failed"
-            job.error_message = str(exc)
-            session.commit()
-        return {"job_id": job_id, "status": "failed", "error": str(exc)}
     except Exception as exc:
         session.rollback()
-        job = session.get(AsyncJob, job_id)
-        if job:
-            job.status = "failed"
-            job.error_message = str(exc)
-            session.commit()
+        # Re-fetch job after rollback; use merge() to avoid detached-instance errors.
+        try:
+            job = session.get(AsyncJob, job_id)
+            if job:
+                job.status = "failed"
+                job.error_message = str(exc)
+                session.commit()
+        except Exception:
+            log.exception("generate_itinerary_job.fail_record_error", job_id=job_id)
+        _publish_job_event(job_id, "failed")
+        # Return a structured error for ValueError (user-visible) but re-raise others.
+        if isinstance(exc, ValueError):
+            return {"job_id": job_id, "status": "failed", "error": str(exc)}
         raise
     finally:
         session.close()
+
+
+@celery_app.task(name="backend.celery_tasks.run_post_trip_summaries")
+def run_post_trip_summaries():
+    """Generate post-trip summaries for recently completed trips."""
+    log.info("Celery: Starting post-trip summary generation...")
+    from backend.tasks.post_trip import generate_post_trip_summaries
+
+    result = _run_and_record("post_trip", generate_post_trip_summaries)
+    log.info("Celery: Post-trip summaries done.")
+    return result
+
+
+@celery_app.task(name="backend.celery_tasks.run_embedding_sync")
+def run_embedding_sync():
+    """Sync destination embeddings for semantic recommendations."""
+    log.info("Celery: Starting embedding sync...")
+    from backend.tasks.embedding_sync import sync_embeddings
+
+    result = _run_and_record("embedding_sync", sync_embeddings)
+    log.info("Celery: Embedding sync complete.")
+    return result
 
 
 @celery_app.task(name="backend.celery_tasks.heartbeat")

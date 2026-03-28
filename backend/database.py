@@ -1,4 +1,5 @@
 import os
+import threading
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, scoped_session
@@ -10,6 +11,7 @@ db = SQLAlchemy()
 # This is NOT the Flask-SQLAlchemy session. It creates independent sessions
 # that can be used outside of Flask request context (Celery workers, CLI scripts).
 _session_factory = None
+_session_factory_lock = threading.Lock()
 
 
 def SessionLocal():
@@ -17,27 +19,32 @@ def SessionLocal():
     Create a new database session for use OUTSIDE Flask request context.
     Used by Celery tasks, background scripts, and CLI tools.
     Returns a new Session instance that the caller MUST close.
+
+    Thread-safe: double-checked locking ensures only one engine is created
+    even when multiple Celery worker threads start concurrently.
     """
     global _session_factory
     if _session_factory is None:
-        database_url = os.environ.get("DATABASE_URL", "")
-        if not database_url:
-            if os.environ.get("TESTING") == "true":
-                database_url = "sqlite:///:memory:"
-            else:
-                raise RuntimeError("DATABASE_URL is not set")
-        connect_args = (
-            {"check_same_thread": False}
-            if database_url.startswith("sqlite")
-            else {}
-        )
-        engine = create_engine(
-            database_url,
-            pool_pre_ping=True,
-            pool_recycle=300,
-            connect_args=connect_args,
-        )
-        _session_factory = scoped_session(sessionmaker(bind=engine))
+        with _session_factory_lock:
+            if _session_factory is None:
+                database_url = os.environ.get("DATABASE_URL", "")
+                if not database_url:
+                    if os.environ.get("TESTING") == "true":
+                        database_url = "sqlite:///:memory:"
+                    else:
+                        raise RuntimeError("DATABASE_URL is not set")
+                connect_args = (
+                    {"check_same_thread": False}
+                    if database_url.startswith("sqlite")
+                    else {}
+                )
+                engine = create_engine(
+                    database_url,
+                    pool_pre_ping=True,
+                    pool_recycle=300,
+                    connect_args=connect_args,
+                )
+                _session_factory = scoped_session(sessionmaker(bind=engine))
     return _session_factory()
 
 

@@ -9,6 +9,7 @@ from backend.constants import (
     DAY_START_HOUR_ARRIVAL,
     SUNRISE_MAX_HOUR,
     MIN_TRAVEL_MINUTES,
+    FALLBACK_TRAVEL_MINUTES,
 )
 from backend.utils.helpers import haversine_km
 
@@ -77,6 +78,52 @@ class RouteOptimizer:
         """
         if not day_attractions:
             return {"pacing_level": "relaxed", "activities": []}
+
+        # Deduplicate — removes exact name matches AND near-duplicate locations
+        # (same place with variant spellings, e.g. "Amer Fort" vs "Amber Fort").
+        # Strategy: keep whichever record has the longer description (richer data).
+        def _desc_len(a) -> int:
+            return len(getattr(a, "description", "") or "")
+
+        def _coords(a):
+            # Prefer explicit latitude/longitude over lat/lng aliases — avoids
+            # MagicMock attribute auto-creation returning truthy non-numeric values.
+            lat = getattr(a, "latitude", None) or getattr(a, "lat", None)
+            lng = getattr(a, "longitude", None) or getattr(a, "lng", None)
+            if lat is None or lng is None:
+                return None
+            try:
+                return (float(lat), float(lng))
+            except (TypeError, ValueError):
+                return None
+
+        deduped: list[Any] = []
+        for a in day_attractions:
+            a_name = "".join(c for c in (getattr(a, "name", "") or "").lower() if c.isalnum())[:14]
+            a_coords = _coords(a)
+            matched = False
+            for i, existing in enumerate(deduped):
+                ex_name = "".join(c for c in (getattr(existing, "name", "") or "").lower() if c.isalnum())[:14]
+                # Deduplicate on: same DB id, OR (name prefix match AND within 300m)
+                same_id = (
+                    getattr(a, "id", None) is not None
+                    and getattr(a, "id", None) == getattr(existing, "id", None)
+                )
+                same_name = a_name[:10] == ex_name[:10] and len(a_name) >= 4
+                nearby = (
+                    a_coords is not None
+                    and _coords(existing) is not None
+                    and haversine_km(a_coords[0], a_coords[1],
+                                     _coords(existing)[0], _coords(existing)[1]) < 0.3
+                )
+                if same_id or (same_name and nearby):
+                    if _desc_len(a) > _desc_len(existing):
+                        deduped[i] = a
+                    matched = True
+                    break
+            if not matched:
+                deduped.append(a)
+        day_attractions = deduped
 
         # Step 1: Force sunrise spots first
         sunrise = [
@@ -228,7 +275,7 @@ class RouteOptimizer:
                         int((dist_km / self.AVG_URBAN_SPEED_KMH) * 60),
                     )
                 else:
-                    travel_minutes = 30  # fallback if coordinates missing
+                    travel_minutes = FALLBACK_TRAVEL_MINUTES  # fallback if coordinates missing
 
                 current_time += timedelta(minutes=travel_minutes)
 

@@ -6,6 +6,8 @@ x-shared-env: &shared-env
   JWT_SECRET_KEY: ${JWT_SECRET_KEY:?JWT_SECRET_KEY must be set}
   ADMIN_ACCESS_KEY: ${ADMIN_ACCESS_KEY:?ADMIN_ACCESS_KEY must be set}
   GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+  OLLAMA_URL: ${OLLAMA_URL:-http://host.docker.internal:11434}
+  OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2:3b}
 
 services:
   postgres:
@@ -54,7 +56,8 @@ services:
       test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
       interval: 30s
       timeout: 10s
-      start_period: 40s
+      start_period: 60s
+      retries: 3
 
   celery_worker:
     build: .

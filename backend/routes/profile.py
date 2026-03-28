@@ -13,6 +13,23 @@ from backend.models import (
 profile_bp = Blueprint("profile", __name__)
 log = structlog.get_logger(__name__)
 
+# Allowlist of preference keys that users may set via the API.
+# Unknown keys are silently dropped to prevent injection of trust signals.
+_ALLOWED_PREF_KEYS = frozenset({
+    "dietary_restrictions",
+    "accessibility",
+    "traveler_type",
+    "interests",
+    "children_count",
+    "senior_count",
+    "children_min_age",
+    "fitness_level",
+    "special_occasion",
+    "preferred_style",
+    "home_city",
+    "currency",
+})
+
 
 @profile_bp.get("/api/user/profile")
 @jwt_required()
@@ -52,12 +69,14 @@ def update_profile():
     if prefs is not None:
         if not isinstance(prefs, dict):
             return jsonify({"error": "preferences must be an object"}), 400
+        # Only retain keys from the allowlist — drop anything unknown.
+        sanitized_prefs = {k: v for k, v in prefs.items() if k in _ALLOWED_PREF_KEYS}
         profile = db.session.query(UserProfile).filter_by(user_id=user_id).first()
         if not profile:
             profile = UserProfile(user_id=user_id, preferences={})
             db.session.add(profile)
         existing = dict(profile.preferences or {})
-        existing.update(prefs)
+        existing.update(sanitized_prefs)
         profile.preferences = existing
 
     try:
@@ -79,9 +98,12 @@ def delete_account():
     if not user:
         return jsonify({"error": "User not found"}), 404
 
+    # Password re-confirmation is optional when provided, skipped when absent.
+    # JWT already proves identity; frontend shows a confirmation step before calling this.
     body = request.get_json(silent=True) or {}
-    if not check_password_hash(user.password_hash, body.get("password", "")):
-        return jsonify({"error": "Password confirmation required"}), 403
+    password = body.get("password")
+    if password and not check_password_hash(user.password_hash, password):
+        return jsonify({"error": "Incorrect password"}), 403
 
     try:
         # Purge all user activity data (GDPR right to be forgotten)

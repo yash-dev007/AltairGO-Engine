@@ -21,7 +21,9 @@ _storage_uri = "memory://" if (_testing or _dev_eager) else _redis_url
 
 limiter = Limiter(
     key_func=get_remote_address,
-    default_limits=[],
+    # Conservative global default — individual endpoints may override with stricter limits.
+    default_limits=["200 per minute"],
     storage_uri=_storage_uri,
-    swallow_errors=True,
+    # Do NOT silently swallow rate-limit errors — fail closed so limits stay enforced.
+    swallow_errors=False,
 )

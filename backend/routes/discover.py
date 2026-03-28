@@ -30,7 +30,10 @@ import structlog
 from flask import Blueprint, jsonify, request
 
 from backend.database import db
+from backend.extensions import limiter
 from backend.models import Attraction, Destination, DestinationInfo, HotelPrice, State
+
+_MAX_DEST_IDS = 10  # Maximum destination IDs accepted in a single estimate-budget call
 
 discover_bp = Blueprint("discover", __name__)
 log = structlog.get_logger(__name__)
@@ -166,6 +169,72 @@ def _verdict_for_score(score: int) -> tuple[str, str]:
     return "Unknown", "No seasonal data available."
 
 
+def _cosine_similarity(a: list[float], b: list[float]) -> float:
+    """Compute cosine similarity between two vectors. Returns 0.0 on error."""
+    try:
+        if not a or not b or len(a) != len(b):
+            return 0.0
+        dot = sum(x * y for x, y in zip(a, b))
+        mag_a = sum(x * x for x in a) ** 0.5
+        mag_b = sum(x * x for x in b) ** 0.5
+        if mag_a == 0 or mag_b == 0:
+            return 0.0
+        return dot / (mag_a * mag_b)
+    except Exception:
+        return 0.0
+
+
+def _apply_semantic_ranking(scored: list, query: str) -> list:
+    """
+    Blend cosine similarity into existing scores when embeddings are available.
+    Falls back to the original scored list if embedding generation fails.
+    Blend: existing_score * 0.6 + similarity * 100 * 0.4
+    """
+    import os
+    api_key = os.getenv("GEMINI_API_KEY", "")
+    if not api_key:
+        return scored
+
+    # Check if any destination has an embedding
+    has_embeddings = any(
+        getattr(dest, "embedding", None) is not None
+        for dest, _ in scored[:5]  # Quick sample check
+    )
+    if not has_embeddings:
+        return scored
+
+    try:
+        import google.generativeai as genai
+        genai.configure(api_key=api_key)
+        result = genai.embed_content(
+            model="models/text-embedding-004",
+            content=query,
+            task_type="SEMANTIC_SIMILARITY",
+        )
+        query_vector = result["embedding"]
+    except Exception:
+        return scored  # Fallback — don't break recommendations
+
+    reranked = []
+    for dest, base_score in scored:
+        dest_embedding = getattr(dest, "embedding", None)
+        if dest_embedding is not None:
+            try:
+                # embedding may be stored as string in SQLite tests
+                if isinstance(dest_embedding, str):
+                    import json as _json
+                    dest_embedding = _json.loads(dest_embedding)
+                sim = _cosine_similarity(query_vector, dest_embedding)
+                blended = base_score * 0.6 + sim * 100 * 0.4
+            except Exception:
+                blended = base_score
+        else:
+            blended = base_score * 0.6  # Slight penalty for missing embedding
+        reranked.append((dest, blended))
+
+    return reranked
+
+
 # ── Routes ────────────────────────────────────────────────────────────────────
 
 
@@ -197,6 +266,8 @@ def recommend_destinations():
     interests = [i.strip().lower() for i in interests_raw.split(",") if i.strip()] if interests_raw else []
     state_filter = request.args.get("state", "")
     limit = min(request.args.get("limit", type=int, default=10), 50)
+    # Optional semantic query — e.g. "peaceful hill station with old temples"
+    semantic_query = (request.args.get("q") or "").strip()[:300]
 
     params = {
         "budget": budget,
@@ -237,6 +308,12 @@ def recommend_destinations():
 
             final_score = _score_destination(dest, params)
             scored.append((dest, final_score))
+
+        # ── Semantic re-ranking (optional) ───────────────────────────────────
+        # When a free-text query is provided AND destination embeddings exist,
+        # blend cosine similarity into the score for semantic relevance.
+        if semantic_query:
+            scored = _apply_semantic_ranking(scored, semantic_query)
 
         scored.sort(key=lambda x: x[1], reverse=True)
         top = scored[:limit]
@@ -399,6 +476,7 @@ def is_good_time():
 
 
 @discover_bp.route("/api/discover/estimate-budget", methods=["POST"])
+@limiter.limit("30 per minute")
 def estimate_budget():
     """
     Detailed budget estimate before generating a full itinerary.
@@ -417,6 +495,8 @@ def estimate_budget():
 
     if not dest_ids or not isinstance(dest_ids, list):
         return jsonify({"error": "destination_ids (list) is required"}), 400
+    if len(dest_ids) > _MAX_DEST_IDS:
+        return jsonify({"error": f"destination_ids may contain at most {_MAX_DEST_IDS} IDs"}), 400
     if not 1 <= duration <= 60:
         return jsonify({"error": "duration must be 1–60"}), 400
     if not 1 <= travelers <= 50:

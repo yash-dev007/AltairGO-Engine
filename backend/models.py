@@ -26,6 +26,7 @@ else:
     except ImportError:
         Vector = String
 
+
 class AnalyticsEvent(Base):
     __tablename__ = 'analytics_event'
     id = Column(Integer, primary_key=True)
@@ -33,6 +34,7 @@ class AnalyticsEvent(Base):
     user_id = Column(Integer, nullable=True)
     payload = Column(JSON, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
 
 class EngineSetting(Base):
     """Stores dynamic configuration for the intelligence engine."""
@@ -42,6 +44,7 @@ class EngineSetting(Base):
     value = Column(String(500), nullable=False)
     description = Column(String(255))
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
 
 class User(Base):
     __tablename__ = 'user'
@@ -57,6 +60,7 @@ class User(Base):
         """Always store email in lowercase regardless of how it was inserted."""
         return value.lower() if value else value
 
+
 class Country(Base):
     __tablename__ = 'country'
     id = Column(Integer, primary_key=True)
@@ -65,12 +69,14 @@ class Country(Base):
     currency = Column(String(10), nullable=True)
     image = Column(String(255), nullable=True)
 
+
 class State(Base):
     __tablename__ = 'state'
     id = Column(Integer, primary_key=True)
     name = Column(String(100), nullable=False)
     image = Column(String(255), nullable=True)
     country_id = Column(Integer, ForeignKey('country.id'))
+
 
 class Destination(Base):
     __tablename__ = 'destination'
@@ -121,6 +127,7 @@ class Destination(Base):
     confidence_score         = Column(Float, nullable=True)
     version                  = Column(Integer, default=1)
     embedding                = Column(Vector(1536), nullable=True)
+
 
 class Attraction(Base):
     __tablename__ = 'attraction'
@@ -220,6 +227,7 @@ class AttractionSignal(Base):
     session_id     = Column(String(100), nullable=True, index=True)    # for guest tracking
     created_at     = Column(DateTime(timezone=True), server_default=func.now())
 
+
 class HotelPrice(Base):
     __tablename__ = 'hotel_price'
 
@@ -239,6 +247,7 @@ class HotelPrice(Base):
 
     destination         = relationship('Destination', back_populates='hotel_prices')
 
+
 class FlightRoute(Base):
     __tablename__ = 'flight_route'
 
@@ -253,6 +262,7 @@ class FlightRoute(Base):
     transport_type     = Column(String(20), default='flight', index=True) # flight / train / bus
     train_classes      = Column(JSON)                          # {ac: 1200, sleeper: 450}
     last_synced        = Column(DateTime(timezone=True), server_default=func.now())
+
 
 class Trip(Base):
     __tablename__ = 'trip'
@@ -281,6 +291,7 @@ class Trip(Base):
 
     created_at          = Column(DateTime(timezone=True), server_default=func.now())
 
+
 class DestinationRequest(Base):
     __tablename__ = 'destination_request'
 
@@ -294,6 +305,7 @@ class DestinationRequest(Base):
 
 # ── V2 Architecture New Tables ────────────────────────────────
 
+
 class UserProfile(Base):
     __tablename__ = 'user_profiles'
     id              = Column(Integer, primary_key=True)
@@ -303,6 +315,7 @@ class UserProfile(Base):
     embedding       = Column(Vector(1536), nullable=True)
     created_at      = Column(DateTime(timezone=True), server_default=func.now())
     updated_at      = Column(DateTime(timezone=True), onupdate=func.now())
+
 
 class Feedback(Base):
     __tablename__ = 'feedback'
@@ -315,6 +328,7 @@ class Feedback(Base):
     comment         = Column(Text, nullable=True)
     created_at      = Column(DateTime(timezone=True), server_default=func.now())
 
+
 class DataSourceLog(Base):
     __tablename__ = 'data_sources'
     id              = Column(Integer, primary_key=True)
@@ -325,6 +339,7 @@ class DataSourceLog(Base):
     details         = Column(JSON, nullable=True)
     created_at      = Column(DateTime(timezone=True), server_default=func.now())
 
+
 class FeatureFlag(Base):
     __tablename__ = 'feature_flags'
     id              = Column(Integer, primary_key=True)
@@ -334,6 +349,7 @@ class FeatureFlag(Base):
     details         = Column(JSON, nullable=True)
     created_at      = Column(DateTime(timezone=True), server_default=func.now())
 
+
 class CurrencyRate(Base):
     __tablename__ = 'currency_rates'
     id              = Column(Integer, primary_key=True)
@@ -341,6 +357,7 @@ class CurrencyRate(Base):
     target_currency = Column(String(3), nullable=False)
     rate            = Column(Float, nullable=False)
     snapshot_date   = Column(DateTime(timezone=True), server_default=func.now())
+
 
 class POIClosure(Base):
     __tablename__ = 'poi_closures'
@@ -350,6 +367,7 @@ class POIClosure(Base):
     start_date      = Column(DateTime(timezone=True), nullable=False)
     end_date        = Column(DateTime(timezone=True), nullable=True)
     created_at      = Column(DateTime(timezone=True), server_default=func.now())
+
 
 class AsyncJob(Base):
     __tablename__ = 'async_jobs'
@@ -369,6 +387,7 @@ class AsyncJob(Base):
 
 
 # ── Booking Automation ────────────────────────────────────────────────────────
+
 
 class TripPermissionRequest(Base):
     """
@@ -465,6 +484,7 @@ class WeatherAlert(Base):
 
 
 # ── Destination Travel Intelligence ──────────────────────────────────────────
+
 
 class DestinationInfo(Base):
     """
@@ -579,6 +599,22 @@ class ExpenseEntry(Base):
     __table_args__ = (
         Index('ix_expense_trip_user', 'trip_id', 'user_id'),
     )
+
+
+class WebhookLog(Base):
+    """
+    Audit trail for incoming vendor webhooks (booking status callbacks).
+    Every received webhook is logged here regardless of processing outcome.
+    """
+    __tablename__ = 'webhook_log'
+
+    id                  = Column(String(50), primary_key=True)   # UUID
+    provider            = Column(String(50), nullable=False, index=True)  # bookingcom | makemytrip | generic
+    event_type          = Column(String(100), nullable=True)              # confirmed | cancelled | modified
+    payload             = Column(JSON, nullable=True)                     # raw vendor payload
+    processing_status   = Column(String(50), default='received', index=True)  # received | processed | rejected | failed
+    booking_id          = Column(String(50), ForeignKey('booking.id'), nullable=True, index=True)
+    created_at          = Column(DateTime(timezone=True), server_default=func.now())
 
 
 class BlogPost(Base):

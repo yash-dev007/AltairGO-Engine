@@ -29,11 +29,53 @@ except ImportError:
     _qa_agent = None
 
 
+def _repair_ollama_json(text: str) -> str:
+    """
+    Fix common Ollama JSON malformation where an array of objects is returned as:
+      ["key": val, ...]  →  [{"key": val, ...}]
+    or a single object missing braces:
+      "key": val, ...    →  {"key": val, ...}
+    Returns the original string unchanged if pattern is not detected.
+    """
+    import re
+    s = text.strip()
+
+    # Pattern: starts with [ followed by "key": (not {)
+    # e.g. ["day": 1, "activities": [...]]
+    if s.startswith('[') and not s.startswith('[{') and not s.startswith('["') is False:
+        # Check if it looks like object content immediately after [
+        inner = s[1:].lstrip()
+        if inner and inner[0] == '"':
+            # Wrap each top-level object: split on }, { boundaries is complex —
+            # simpler: replace leading [ with [{ and trailing ] with }]
+            # only when the content doesn't start with another [
+            candidate = '[{' + s[1:-1] + '}]'
+            try:
+                json.loads(candidate)
+                return candidate
+            except json.JSONDecodeError:
+                pass
+
+    # Pattern: bare object without braces at top level
+    # e.g.  "trip_title": "foo", "smart_insights": [...]
+    if s and s[0] == '"':
+        candidate = '{' + s + '}'
+        try:
+            json.loads(candidate)
+            return candidate
+        except json.JSONDecodeError:
+            pass
+
+    return text
+
+
 class GeminiService:
     BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
     DEFAULT_MODEL = "gemini-2.0-flash"
     FALLBACK_MODEL = "gemini-2.0-flash-lite"
     MAX_RETRIES = 3
+    OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
+    OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:3b")
 
     def __init__(self, api_key=None):
         self.api_key = api_key or os.getenv("GEMINI_API_KEY", "")
@@ -276,7 +318,42 @@ STRICT RULES:
                     continue
                 break
 
+        # All Gemini models failed — try local Ollama as final fallback
+        ollama_result = self._request_ollama(prompt, response_mime_type)
+        if ollama_result is not None:
+            return ollama_result
+
         raise RuntimeError(f"Gemini API failed after retries: {last_error}")
+
+    def _request_ollama(self, prompt: str, response_mime_type: str | None) -> dict | None:
+        """Call a local Ollama model as fallback. Returns None if Ollama is unavailable."""
+        try:
+            json_instruction = (
+                "\n\nIMPORTANT: Respond with ONLY valid JSON, no markdown, no explanation."
+                if response_mime_type == "application/json" else ""
+            )
+            payload = {
+                "model": self.OLLAMA_MODEL,
+                "prompt": prompt + json_instruction,
+                "stream": False,
+            }
+            response = requests.post(
+                f"{self.OLLAMA_URL}/api/generate",
+                json=payload,
+                timeout=60,
+            )
+            if response.status_code != 200:
+                log.warning("ollama.request_failed", status=response.status_code)
+                return None
+            text = response.json().get("response", "")
+            if not text:
+                return None
+            log.info("ollama.request_succeeded", model=self.OLLAMA_MODEL)
+            # Wrap in Gemini-compatible response shape so _extract_text works
+            return {"candidates": [{"content": {"parts": [{"text": text}]}, "finishReason": "STOP"}]}
+        except Exception as exc:
+            log.warning("ollama.unavailable", error=str(exc))
+            return None
 
     @staticmethod
     def _extract_text(result: dict) -> str:
@@ -315,6 +392,15 @@ STRICT RULES:
             return json.loads(cleaned)
         except json.JSONDecodeError:
             pass
+
+        # Repair common Ollama malformation: ["key": val, ...] instead of [{"key": val}]
+        # Detected when text starts with `["` and has `:` before the first `{`
+        repaired = _repair_ollama_json(cleaned)
+        if repaired != cleaned:
+            try:
+                return json.loads(repaired)
+            except json.JSONDecodeError:
+                pass
 
         # Gemini mocks and some providers occasionally return Python-literal-style
         # dicts/lists. Accept those as a fallback for robustness.
@@ -393,11 +479,16 @@ STRICT RULES:
         return self._fallback_skeleton(itinerary_data)
 
 
-_gemini_service = None
+import threading as _threading
+
+_gemini_service: GeminiService | None = None
+_gemini_service_lock = _threading.Lock()
 
 
 def get_gemini_service() -> GeminiService:
     global _gemini_service
     if _gemini_service is None:
-        _gemini_service = GeminiService()
+        with _gemini_service_lock:
+            if _gemini_service is None:
+                _gemini_service = GeminiService()
     return _gemini_service

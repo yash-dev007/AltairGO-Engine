@@ -1,5 +1,4 @@
 import logging
-from typing import Any
 
 from backend.constants import (
     LUXURY_MIN_DAILY_PP,

@@ -119,6 +119,12 @@ def create_app(test_config=None):
     @app.after_request
     def attach_request_metadata(response):
         response.headers["X-Request-Id"] = getattr(g, "request_id", "")
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+        if not app.debug:
+            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
         log.info("request.completed", status_code=response.status_code)
         return response
 
@@ -142,6 +148,8 @@ def create_app(test_config=None):
     from backend.routes.sharing import sharing_bp
     from backend.routes.search import search_bp
     from backend.routes.blogs import blogs_bp
+    from backend.routes.feedback import feedback_bp
+    from backend.routes.webhooks import webhooks_bp
 
     app.register_blueprint(trips_bp)
     app.register_blueprint(admin_bp)
@@ -159,6 +167,14 @@ def create_app(test_config=None):
     app.register_blueprint(sharing_bp)
     app.register_blueprint(search_bp)
     app.register_blueprint(blogs_bp)
+    app.register_blueprint(feedback_bp)
+    app.register_blueprint(webhooks_bp)
+
+    # Register Booking.com affiliate provider for hotel bookings (no-op when
+    # BOOKINGCOM_AFFILIATE_ID is not set — SimulatedProvider is used instead).
+    from backend.services.booking_providers.bookingcom import BookingComProvider
+    from backend.services.booking_providers.registry import register as register_provider
+    register_provider("hotel", BookingComProvider())
 
     limiter.init_app(app)
     JWTManager(app)
@@ -172,9 +188,9 @@ def create_app(test_config=None):
         try:
             database.db.session.execute(text("SELECT 1"))
             checks["db"] = "ok"
-        except Exception as e:
+        except Exception:
             log.exception("health.db_check_failed")
-            checks["db"] = f"error: {str(e)}"
+            checks["db"] = "error"
             checks["status"] = "degraded"
 
         try:
@@ -183,9 +199,9 @@ def create_app(test_config=None):
                 raise ValueError("REDIS_URL not configured")
             redis.from_url(redis_url, decode_responses=True).ping()
             checks["redis"] = "ok"
-        except Exception as e:
+        except Exception:
             log.warning("health.redis_check_failed")
-            checks["redis"] = f"error: {str(e)}"
+            checks["redis"] = "error"
             checks["status"] = "degraded"
 
         code = 200 if checks["status"] == "ok" else 503
@@ -211,4 +227,5 @@ def create_app(test_config=None):
 
 if __name__ == "__main__":
     app = create_app()
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    _debug = os.getenv("FLASK_DEBUG", "false").lower() in ("1", "true", "yes")
+    app.run(host="127.0.0.1", port=5000, debug=_debug)
