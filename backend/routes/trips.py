@@ -241,7 +241,7 @@ def stream_itinerary_status(job_id):
         client = get_metrics_redis()
         stream_key = f"job:events:{job_id}"
         last_id = "0"
-        max_wait = 120  # 2 minute ceiling
+        max_wait = 300  # 5 minute ceiling (Ollama local fallback can take ~100s)
         start = time.monotonic()
 
         if client:
