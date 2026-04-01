@@ -353,6 +353,7 @@ def create_booking_plan(trip_id: int):
             items_snapshot=raw_items,
         )
         db.session.add(perm_req)
+        db.session.flush()  # ensure perm_req.id is in DB before booking FK references it
 
         # Create individual Booking rows
         booking_rows = []
@@ -738,6 +739,50 @@ def execute_all_bookings(trip_id: int):
     except Exception:
         db.session.rollback()
         log.exception("booking.execute_all_failed")
+        return jsonify({"error": "Internal server error", "request_id": getattr(g, "request_id", None)}), 500
+
+
+@bookings_bp.route("/api/booking/<booking_id>/approve", methods=["POST"])
+@jwt_required()
+def approve_booking(booking_id: str):
+    """Approve a single booking item."""
+    user_id = _safe_user_id()
+    if user_id is None:
+        return jsonify({"error": "Unauthorized"}), 401
+    try:
+        booking = db.session.get(Booking, booking_id)
+        if not booking or booking.user_id != user_id:
+            return jsonify({"error": "Booking not found"}), 404
+        booking.user_approved = 1
+        booking.status = "approved"
+        db.session.commit()
+        log.info("booking.approved", booking_id=booking_id, user_id=user_id)
+        return jsonify({"booking_id": booking_id, "status": "approved"}), 200
+    except Exception:
+        db.session.rollback()
+        log.exception("booking.approve_failed")
+        return jsonify({"error": "Internal server error", "request_id": getattr(g, "request_id", None)}), 500
+
+
+@bookings_bp.route("/api/booking/<booking_id>/reject", methods=["POST"])
+@jwt_required()
+def reject_booking(booking_id: str):
+    """Reject a single booking item."""
+    user_id = _safe_user_id()
+    if user_id is None:
+        return jsonify({"error": "Unauthorized"}), 401
+    try:
+        booking = db.session.get(Booking, booking_id)
+        if not booking or booking.user_id != user_id:
+            return jsonify({"error": "Booking not found"}), 404
+        booking.user_approved = -1
+        booking.status = "rejected"
+        db.session.commit()
+        log.info("booking.rejected", booking_id=booking_id, user_id=user_id)
+        return jsonify({"booking_id": booking_id, "status": "rejected"}), 200
+    except Exception:
+        db.session.rollback()
+        log.exception("booking.reject_failed")
         return jsonify({"error": "Internal server error", "request_id": getattr(g, "request_id", None)}), 500
 
 

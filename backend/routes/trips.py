@@ -353,6 +353,9 @@ def get_trip(trip_id):
             "traveler_type": trip.traveler_type,
             "total_cost": trip.total_cost,
             "itinerary_json": trip.itinerary_json,
+            "is_customized": bool(trip.is_customized),
+            "user_notes": trip.user_notes,
+            "quality_score": getattr(trip, 'quality_score', None),
             "created_at": trip.created_at.isoformat() if trip.created_at else None,
         }), 200
     except Exception:

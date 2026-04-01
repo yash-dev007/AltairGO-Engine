@@ -67,6 +67,26 @@ from backend.models import (
 trip_editor_bp = Blueprint("trip_editor", __name__)
 log = structlog.get_logger(__name__)
 
+_ALLOWED_HOTEL_URL_DOMAINS = {
+    "booking.com", "hotels.com", "agoda.com", "makemytrip.com",
+    "cleartrip.com", "goibibo.com", "airbnb.com", "trivago.com",
+    "expedia.com", "oyorooms.com", "treebo.com",
+}
+
+
+def _safe_hotel_url(url: str | None) -> str:
+    """Return url only if it belongs to an allowed hotel booking domain, else empty string."""
+    if not url:
+        return ""
+    try:
+        from urllib.parse import urlparse
+        host = urlparse(url).netloc.lower().lstrip("www.")
+        if any(host == d or host.endswith("." + d) for d in _ALLOWED_HOTEL_URL_DOMAINS):
+            return url
+    except Exception:
+        pass
+    return ""
+
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -290,7 +310,7 @@ def change_hotel(trip_id: int):
         new_accom = {
             "hotel_name": name,
             "cost_per_night": body.get("cost_per_night", 0),
-            "booking_url": body.get("booking_url", ""),
+            "booking_url": _safe_hotel_url(body.get("booking_url")),
             "star_rating": body.get("star_rating"),
             "category": body.get("category", "mid"),
             "notes": body.get("notes"),
@@ -454,13 +474,10 @@ def add_activity(trip_id: int, day_num: int):
         }), 400
 
     try:
-        # Insert new activity into the pool and re-optimise
-        current_non_break = [a for a in day_data.get("activities", []) if not a.get("is_break")]
-        current_non_break.append(new_act)
-
-        # If a preferred time was given, respect it by setting best_visit_time_hour on proxy
+        # Insert new activity into day_data so _reoptimize_day includes it
         if new_act.get("_preferred_time"):
             new_act["time"] = new_act.pop("_preferred_time")
+        day_data["activities"] = list(day_data.get("activities", [])) + [new_act]
 
         day_data = _reoptimize_day(trip, day_num, day_data)
         # If new_act was custom, the re-optimizer made a proxy from it — inject user_notes back

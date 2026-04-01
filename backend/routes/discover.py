@@ -256,6 +256,9 @@ def recommend_destinations():
       limit        — max results (default 10, max 50)
     """
     budget = request.args.get("budget", type=float)
+    if budget is not None and budget <= 0:
+        return jsonify({"error": "budget must be greater than 0"}), 400
+
     duration = request.args.get("duration", type=int, default=3)
     travelers = request.args.get("travelers", type=int, default=1)
     style = request.args.get("style", "standard")
