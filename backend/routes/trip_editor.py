@@ -114,10 +114,11 @@ def _reoptimize_day(trip: Trip, day_num: int, day_data: dict) -> dict:
     Re-run RouteOptimizer on the non-break activities of a day.
     Preserves break entries (breakfast, lunch, dinner, hotel check-in) from
     the original schedule — only activity order and timing are recalculated.
-    """
-    itinerary = trip.itinerary_json or {}
-    num_days = trip.duration or 1
 
+    Always uses day_type="normal" because editor operations should not apply
+    the arrival/departure activity caps from initial generation (those would
+    silently drop morning attractions like Amber Fort from Day 1).
+    """
     # Resolve date string for this day
     date_str = date.today().isoformat()
     if trip.start_date:
@@ -127,17 +128,15 @@ def _reoptimize_day(trip: Trip, day_num: int, day_data: dict) -> dict:
         except Exception:
             pass
 
-    day_type = (
-        "arrival" if day_num == 1 and num_days > 1
-        else "departure" if day_num == num_days and num_days > 1
-        else "normal"
-    )
+    day_type = "normal"
 
     # Pull non-break activities as proxy objects for RouteOptimizer
+    # RouteOptimizer inserts its own meal breaks, so original breaks are excluded
     act_entries = [a for a in day_data.get("activities", []) if not a.get("is_break")]
     proxies = [_activity_dict_to_proxy(a) for a in act_entries]
 
     updated_route = RouteOptimizer().optimize(proxies, date_str, day_type=day_type)
+    # RouteOptimizer already inserts standard meal breaks in the schedule
     day_data["activities"] = updated_route["activities"]
     day_data["pacing_level"] = updated_route["pacing_level"]
     return day_data

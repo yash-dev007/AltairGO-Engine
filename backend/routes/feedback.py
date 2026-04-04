@@ -38,7 +38,7 @@ _VALID_TAGS = frozenset({
 })
 
 _MAX_COMMENT_LEN = 2000
-_MAX_TAGS = 5
+_MAX_TAGS = 8
 
 
 def _safe_user_id() -> int | None:
