@@ -787,6 +787,58 @@ def next_trip_ideas(trip_id: int):
         return jsonify({"error": "Internal server error"}), 500
 
 
+# ── Trip Variants ─────────────────────────────────────────────────────────────
+
+
+@trip_tools_bp.route("/api/trip/<int:trip_id>/variants", methods=["POST"])
+@jwt_required()
+def trip_variants(trip_id: int):
+    """
+    Generate relaxed / balanced / intense variants from an existing trip's itinerary.
+
+    Instead of re-running full AI generation, this derives three pace variants
+    by adjusting the activity count per day from the saved itinerary.
+    Returns all three so the traveller can pick the density that suits them.
+    """
+    user_id = int(get_jwt_identity())
+
+    trip = db.session.get(Trip, trip_id)
+    if not trip or trip.user_id != user_id:
+        return jsonify({"error": "Trip not found"}), 404
+
+    itinerary = trip.itinerary_json or {}
+    days = itinerary.get("itinerary", [])
+
+    def _trim_day(day_data: dict, keep: int) -> dict:
+        """Return a copy of day_data with at most `keep` non-break activities."""
+        import copy
+        d = copy.deepcopy(day_data)
+        activities = d.get("activities", [])
+        non_breaks = [a for a in activities if not a.get("is_break")]
+        breaks = [a for a in activities if a.get("is_break")]
+        d["activities"] = non_breaks[:keep] + breaks
+        return d
+
+    def _build_variant(label: str, keep_per_day: int, pacing: str) -> dict:
+        variant_days = [_trim_day(d, keep_per_day) for d in days]
+        return {
+            "trip_title": f"{itinerary.get('trip_title', 'Trip')} ({label})",
+            "pacing": pacing,
+            "total_cost": itinerary.get("total_cost", 0),
+            "itinerary": variant_days,
+            "smart_insights": itinerary.get("smart_insights", []),
+        }
+
+    return jsonify({
+        "based_on_trip": trip_id,
+        "variants": {
+            "relaxed": _build_variant("Relaxed", 2, "relaxed"),
+            "balanced": _build_variant("Balanced", 3, "moderate"),
+            "intense": _build_variant("Intense", 5, "intense"),
+        },
+    }), 200
+
+
 # ── Post-Trip Summary ─────────────────────────────────────────────────────────
 
 
