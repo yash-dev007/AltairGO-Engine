@@ -1,5 +1,6 @@
 import os
 from sqlalchemy import Boolean, Column, Float, String, Integer, JSON, ForeignKey, DateTime, SmallInteger, Text, Index
+from sqlalchemy.dialects.postgresql import ARRAY as PG_ARRAY
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship, validates
 try:
@@ -629,7 +630,7 @@ class BlogPost(Base):
     image      = Column(Text, nullable=True)
     excerpt    = Column(Text, nullable=True)
     content    = Column(Text, nullable=True)
-    tags       = Column(JSON, default=lambda: [])  # JSON list instead of ARRAY for SQLite compat
+    tags       = Column(PG_ARRAY(Text) if os.environ.get("TESTING") != "true" else JSON, default=lambda: [])  # ARRAY in postgres, JSON fallback for SQLite testing
     author     = Column(String(100), nullable=True)
     published  = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
