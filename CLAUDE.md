@@ -280,16 +280,18 @@ cd "D:/Projects/AltairGO-Platform" && npm run dev
 
 ---
 
-## 16. Known Limitations & Next Priorities
+## 16. Status & Remaining Work
 
-**Limitations:**
-- 179/186 destinations have NULL `popularity_score` → affects ranking quality
-- Embeddings: column is VARCHAR(1536) but models are 768/3072-dim — needs column resize
-- Blog posts: table + endpoints exist, no content seeded yet
+**Production-ready as of 2026-04-06:**
+- All 190 destinations have `popularity_score` (min 5, max 95, avg 58) — scored by attraction count + rating + richness
+- Embeddings: `vector(384)` on destination/attraction/user_profiles — uses local `all-MiniLM-L6-v2` via sentence-transformers (no API key)
+- Blog posts: 23 posts seeded across 8 categories (Budget, Monsoon, Offbeat, Food, Family, Adventure, Luxury, Solo)
+- Docker: healthchecks on all 5 services, resource limits, Gunicorn preload + max_requests jitter
+
+**Remaining limitations:**
 - Free-tier Gemini → 429 → unpolished fallback (fix: paid API key or Ollama)
+- Embeddings not yet generated for existing destinations (run `make embeddings` or trigger `embedding_sync` Celery task)
 
-**Next priorities:**
-1. Populate `popularity_score` for 179 null destinations (SQL: attraction count + richness)
-2. Local embeddings via `all-MiniLM-L6-v2` (384-dim) — resize column first
-3. Seed blog posts via admin panel
-4. Production Docker health checks + Gunicorn tuning
+**Embedding model:** `all-MiniLM-L6-v2` (384-dim, normalized cosine, local inference, no API key)
+- Run once: `make embeddings` or `python -m backend.scripts.generate_embeddings`
+- Nightly: Celery beat `run_embedding_sync` task handles incremental updates
