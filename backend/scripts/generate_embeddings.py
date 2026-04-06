@@ -2,8 +2,10 @@
 scripts/generate_embeddings.py — Destination Embedding Generator
 ═════════════════════════════════════════════════════════════════
 
-Generates 1536-dim text embeddings for all Destination rows that don't
-have one yet, using the Gemini embedding API (models/text-embedding-004).
+Generates 384-dim text embeddings for all Destination rows that don't
+have one yet, using the local all-MiniLM-L6-v2 model via sentence-transformers.
+
+No API key required — runs fully in-process.
 
 Embeddings enable semantic similarity in the discovery engine:
   - "Find places with old architecture and peaceful vibes"
@@ -12,29 +14,33 @@ Embeddings enable semantic similarity in the discovery engine:
 Usage:
   python -m backend.scripts.generate_embeddings
 
-Environment:
-  GEMINI_API_KEY — required
-  BATCH_SIZE     — optional, default 10 (destinations per API batch)
-
 The script is also called nightly by the embedding_sync Celery task.
 """
 
 import os
-import time
-
 import structlog
 
 log = structlog.get_logger(__name__)
 
-BATCH_SIZE = int(os.getenv("EMBEDDING_BATCH_SIZE", "10"))
-GEMINI_MODEL = "text-embedding-004"
+BATCH_SIZE = int(os.getenv("EMBEDDING_BATCH_SIZE", "32"))
+MODEL_NAME = "all-MiniLM-L6-v2"
+
+_model = None
+
+
+def _get_model():
+    """Lazy-load the sentence-transformers model (cached after first call)."""
+    global _model
+    if _model is None:
+        from sentence_transformers import SentenceTransformer
+        log.info("embedding.model_loading", model=MODEL_NAME)
+        _model = SentenceTransformer(MODEL_NAME)
+        log.info("embedding.model_ready", model=MODEL_NAME)
+    return _model
 
 
 def _build_destination_text(destination) -> str:
-    """
-    Construct a rich text representation of a destination for embedding.
-    Combines name, description, vibe_tags, highlights, and seasonal info.
-    """
+    """Construct a rich text representation of a destination for embedding."""
     parts = [destination.name or ""]
     if destination.description:
         parts.append(destination.description[:300])
@@ -55,31 +61,11 @@ def _build_destination_text(destination) -> str:
     return " | ".join(p for p in parts if p)
 
 
-def _embed_batch(texts: list[str], api_key: str) -> list[list[float]] | None:
-    """Call Gemini embedding API for a batch of texts. Returns list of 1536-dim vectors."""
-    try:
-        from google import genai
-        client = genai.Client(api_key=api_key)
-        response = client.models.embed_content(
-            model=GEMINI_MODEL,
-            contents=texts,
-        )
-        return [e.values for e in response.embeddings]
-    except Exception as exc:
-        log.warning("embedding.api_failed", error=str(exc))
-        return None
-
-
 def run_embedding_generation() -> dict:
     """
     Main entry point: generate embeddings for all destinations without one.
     Returns {generated: N, skipped: N, failed: N}.
     """
-    api_key = os.getenv("GEMINI_API_KEY", "")
-    if not api_key:
-        log.warning("embedding.no_api_key — skipping")
-        return {"generated": 0, "skipped": 0, "failed": 0, "reason": "no_api_key"}
-
     from backend.database import SessionLocal
     from backend.models import Destination
 
@@ -87,8 +73,6 @@ def run_embedding_generation() -> dict:
     generated = skipped = failed = 0
 
     try:
-        # Fetch destinations without embeddings
-        # Vector(1536) is stored as NULL when not set
         destinations = (
             session.query(Destination)
             .filter(Destination.embedding.is_(None))
@@ -100,19 +84,28 @@ def run_embedding_generation() -> dict:
             log.info("embedding.all_up_to_date")
             return {"generated": 0, "skipped": 0, "failed": 0}
 
-        # Process in batches to respect API rate limits
+        model = _get_model()
+
         for batch_start in range(0, len(destinations), BATCH_SIZE):
             batch = destinations[batch_start: batch_start + BATCH_SIZE]
             texts = [_build_destination_text(d) for d in batch]
 
-            vectors = _embed_batch(texts, api_key)
-            if not vectors:
+            try:
+                vectors = model.encode(
+                    texts,
+                    batch_size=BATCH_SIZE,
+                    show_progress_bar=False,
+                    convert_to_numpy=True,
+                    normalize_embeddings=True,
+                )
+            except Exception as exc:
+                log.warning("embedding.encode_failed", error=str(exc))
                 failed += len(batch)
                 continue
 
-            for dest, vector in zip(batch, vectors if isinstance(vectors[0], list) else [vectors]):
+            for dest, vector in zip(batch, vectors):
                 try:
-                    dest.embedding = vector
+                    dest.embedding = vector.tolist()
                     generated += 1
                 except Exception as exc:
                     log.warning("embedding.set_failed", dest_id=dest.id, error=str(exc))
@@ -125,8 +118,6 @@ def run_embedding_generation() -> dict:
                 batch_size=len(batch),
                 generated=generated,
             )
-            # Respect rate limits — 1 second between batches
-            time.sleep(1)
 
         result = {"generated": generated, "skipped": skipped, "failed": failed}
         log.info("embedding.generation_complete", **result)

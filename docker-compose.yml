@@ -8,12 +8,23 @@ x-shared-env: &shared-env
   GEMINI_API_KEY: ${GEMINI_API_KEY:-}
   OLLAMA_URL: ${OLLAMA_URL:-http://host.docker.internal:11434}
   OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2:3b}
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+
+x-restart: &restart
+  restart: unless-stopped
+
+x-depends-infra: &depends-infra
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
 
 services:
   postgres:
     image: postgis/postgis:15-3.4
     container_name: altairgo_postgres
-    restart: unless-stopped
+    <<: *restart
     environment:
       POSTGRES_DB: altairgo
       POSTGRES_USER: altairgo
@@ -23,67 +34,99 @@ services:
     volumes:
       - pg_data:/var/lib/postgresql/data
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U altairgo -d altairgo" ]
+      test: ["CMD-SHELL", "pg_isready -U altairgo -d altairgo"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          memory: 512m
 
   redis:
     image: redis:7-alpine
     container_name: altairgo_redis
-    restart: unless-stopped
+    <<: *restart
     ports:
       - "6379:6379"
     volumes:
       - redis_data:/data
     command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 300m
 
   web:
     build: .
     container_name: altairgo_web
-    restart: unless-stopped
+    <<: [*restart, *depends-infra]
     ports:
       - "5000:5000"
     environment:
       <<: *shared-env
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-https://altairgo.in,http://localhost:5173}
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_started
+      GUNICORN_WORKERS: ${GUNICORN_WORKERS:-3}
+      GUNICORN_TIMEOUT: ${GUNICORN_TIMEOUT:-300}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
       interval: 30s
       timeout: 10s
       start_period: 60s
       retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 1g
 
   celery_worker:
     build: .
     container_name: altairgo_celery_worker
-    restart: unless-stopped
-    command: celery -A backend.celery_config:celery_app worker --loglevel=info
+    <<: [*restart, *depends-infra]
+    command: >
+      celery -A backend.celery_config:celery_app worker
+      --loglevel=${LOG_LEVEL:-info}
+      --concurrency=2
+      --max-tasks-per-child=100
     environment:
       <<: *shared-env
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_started
+    healthcheck:
+      test: ["CMD", "celery", "-A", "backend.celery_config:celery_app", "inspect", "ping", "-d", "celery@$$HOSTNAME", "--timeout", "5"]
+      interval: 60s
+      timeout: 15s
+      start_period: 30s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 768m
 
   celery_beat:
     build: .
     container_name: altairgo_celery_beat
-    restart: unless-stopped
-    command: celery -A backend.celery_config:celery_app beat --loglevel=info
+    <<: [*restart, *depends-infra]
+    command: >
+      celery -A backend.celery_config:celery_app beat
+      --loglevel=${LOG_LEVEL:-info}
     environment:
       <<: *shared-env
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A backend.celery_config:celery_app inspect ping --timeout 5 2>&1 | grep -q pong || exit 1"]
+      interval: 120s
+      timeout: 15s
+      start_period: 30s
+      retries: 2
+    deploy:
+      resources:
+        limits:
+          memory: 256m
 
 volumes:
   pg_data:

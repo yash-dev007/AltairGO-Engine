@@ -1,778 +1,295 @@
-# AltairGO Engine — CLAUDE.md
+# CLAUDE.md
 
-> Complete technical reference for Claude Code. Always read this before making changes.
+> Technical reference for Claude Code. Read before making changes.
+
+---
+
+## Commands
+
+```bash
+python -m pytest backend/tests/ -q --tb=short          # all tests
+python -m pytest backend/tests/ -k "test_generate" -q  # filter by name
+.venv/Scripts/python.exe -m flask --app backend.app:create_app run --port 5000 --reload
+cd "D:/Projects/AltairGO-Platform" && npm run dev
+docker compose up -d redis   # Redis only
+docker compose up            # all services
+```
 
 ---
 
 ## 1. Project Purpose
 
-**AltairGO Travel Intelligence** is a production-grade, India-first AI travel platform that takes a traveler from "I don't know where to go" all the way through to "everything is booked." It generates AI-powered day-by-day itineraries with real cost breakdowns, automates hotel/flight/activity/restaurant bookings with a single click, and provides day-of intelligence (weather alerts, crowd warnings, local events, daily briefings).
+**AltairGO Travel Intelligence** — India-first AI travel platform. Generates AI-powered day-by-day itineraries with real cost breakdowns, automates hotel/flight/activity bookings, and provides day-of intelligence (weather alerts, crowd warnings, local events).
 
-**Stack:** Python Flask + Celery + SQLAlchemy (PostgreSQL/Supabase) + Redis + Gemini 2.0 Flash + Ollama (local fallback) + React 19 (Vite) + Tailwind CSS v4
+**Stack:** Python Flask + Celery + SQLAlchemy (PostgreSQL/Supabase) + Redis + Gemini 2.0 Flash + Ollama (fallback) + React 19 (Vite) + Tailwind CSS v4
 
-**DB:** Supabase PostgreSQL (project ID: `amdtitsokkounoscgova`, region: ap-southeast-2)
+**DB:** Supabase PostgreSQL (project `amdtitsokkounoscgova`, ap-southeast-2)
 
-**Schema migrations:** Managed via **Supabase MCP** (`mcp__claude_ai_Supabase__apply_migration`). Do NOT use `flask db upgrade` against production — autogenerate tries to drop PostGIS system tables. Write targeted `ALTER TABLE` / `CREATE TABLE IF NOT EXISTS` SQL instead.
+**Migrations:** Supabase MCP `apply_migration` with targeted DDL only. **Never** `flask db upgrade` in prod — autogenerate drops PostGIS tables.
 
 ---
 
-## 2. Repository Structure
+## 2. Key Directories
 
 ```
-AltairGO-Engine-main/
-├── backend/
-│   ├── app.py                      # Flask factory + all blueprints (trips, admin, auth, destinations,
-│   │                               #   dashboard, signals, ops, bookings, expenses, discover,
-│   │                               #   trip_tools, trip_editor, profile, sharing, search,
-│   │                               #   feedback, webhooks, blogs)
-│   ├── database.py                 # SQLAlchemy db + Celery-safe SessionLocal
-│   ├── extensions.py               # Rate limiter — memory:// when TESTING or DEV_EAGER
-│   ├── models.py                   # 30+ SQLAlchemy models (see §6)
-│   ├── celery_config.py            # Celery broker + beat schedule; DEV_EAGER uses SQLite broker
-│   ├── celery_tasks.py             # Task wrappers
-│   ├── validation.py               # ItineraryValidator
-│   ├── schemas.py                  # Marshmallow schemas (BaseSchema unknown=EXCLUDE)
-│   ├── constants.py                # All magic numbers / config constants (centralised)
-│   ├── request_validation.py       # load_request_json(schema) helper
-│   ├── engine/
-│   │   ├── orchestrator.py         # TripGenerationOrchestrator — main coordinator
-│   │   ├── filter_engine.py        # 6+ filter steps incl. dietary/accessibility/senior/min_age
-│   │   ├── cluster_engine.py       # H3 geospatial day grouping + theme diversity
-│   │   ├── budget_allocator.py     # Tier splits + auto-demotion + real hotel cost + group discounts
-│   │   ├── route_optimizer.py      # Time scheduling + queue buffers + activity enrichment output
-│   │   ├── assembler.py            # Final JSON + document_checklist + daily_transport_guide
-│   │   └── simulation_data.py      # Test data fixtures
-│   ├── routes/
-│   │   ├── trips.py                # /generate-itinerary, /get-itinerary-status, /get-itinerary-status/<id>/stream (SSE), /save-trip
-│   │   ├── auth.py                 # /auth/* — register/login/refresh/me + brute-force lockout
-│   │   ├── admin.py                # Admin CRUD, verify-key
-│   │   ├── destinations.py         # Destination browsing, budget calculator
-│   │   ├── ops.py                  # Job trigger, engine config (whitelist of 10 keys)
-│   │   ├── dashboard.py            # /api/ops/summary (authoritative), SSE live-metrics
-│   │   ├── signals.py              # Behavioral signal tracking
-│   │   ├── bookings.py             # Full booking automation + execute-all + cancel + dashboard
-│   │   ├── expenses.py             # Expense tracker — planned vs actual
-│   │   ├── discover.py             # Discovery engine — recommend/best-time/compare/estimate
-│   │   ├── trip_tools.py           # Readiness check, daily briefing, activity swap, next-trip ideas, summary
-│   │   ├── trip_editor.py          # Full plan editing — hotel/activity/notes/booking customisation
-│   │   ├── profile.py              # GET/PUT /api/user/profile, DELETE /api/user/account
-│   │   ├── sharing.py              # POST/DELETE /api/trip/<id>/share, GET /api/shared/<token>
-│   │   ├── search.py               # GET /api/search?q=&type=&limit=
-│   │   ├── feedback.py             # POST/GET/PUT /api/trip/<id>/review, POST /api/attraction/<id>/review
-│   │   ├── webhooks.py             # Incoming webhook handlers
-│   │   └── blogs.py                # GET /blogs, GET /blogs/<id>, Admin CRUD /api/admin/blogs
-│   ├── services/
-│   │   ├── gemini_service.py       # GeminiService — Gemini 2.0 Flash → flash-lite → Ollama fallback
-│   │   ├── metrics_service.py      # Redis metrics helpers; gen_times list 7-day TTL
-│   │   ├── cache_service.py        # SHA-256 cache keys + env-var TTLs
-│   │   └── image_service.py        # Multi-source image fetching
-│   ├── agents/
-│   │   ├── destination_validator_agent.py
-│   │   ├── itinerary_qa_agent.py
-│   │   ├── memory_agent.py
-│   │   ├── token_optimizer.py
-│   │   ├── mcp_context_agent.py
-│   │   └── web_scraper_agent.py
-│   ├── tasks/
-│   │   ├── score_updater.py        # update_scores() + update_scores_from_quality()
-│   │   ├── cache_warmer.py
-│   │   ├── quality_scorer.py
-│   │   ├── affiliate_health.py
-│   │   ├── weather_sync.py         # Open-Meteo → WeatherAlert rows
-│   │   ├── post_trip.py            # Post-trip summary generation
-│   │   └── embedding_sync.py       # Nightly embedding refresh
-│   ├── scripts/                    # Data ingestion & enrichment (OSM, Wikidata, pricing, H3)
-│   │   └── generate_embeddings.py  # Destination embedding generator (Gemini text-embedding-004)
-│   ├── utils/
-│   │   ├── auth.py                 # @require_admin decorator
-│   │   └── helpers.py
-│   └── tests/                      # 188 passed, 1 skipped — run: python -m pytest backend/tests/ -q
-├── [frontend at D:\Projects\AltairGO-Platform]  # React 19 traveler-facing + admin UI (see §12)
-│   ├── package.json                # recharts + react-hot-toast + framer-motion + lucide-react
-│   ├── vite.config.js              # Dev proxy to :5000 + manualChunks code splitting
-│   └── src/
-│       ├── App.jsx                 # Full router — public / protected / admin routes
-│       ├── contexts/AuthContext.jsx # Unified traveler + admin auth; tokens: ag_token / ag_admin_token
-│       ├── services/api.js         # 50+ API functions; ag:unauthorized event dispatch
-│       ├── components/ui/index.jsx # Button/Card/Input/Badge/Modal/Spinner/ProgressBar/StatCard
-│       ├── components/layout/      # TravelerLayout (sticky glass navbar) + AdminLayout (sidebar)
-│       └── pages/                  # 14 traveler pages + 6 admin pages (see §12)
-├── migrations/                     # Flask-Migrate init — do NOT run against Supabase prod
-├── docker-compose.yml
-├── Dockerfile
-├── gunicorn.conf.py
-├── Makefile
-└── .env                            # Contains DEV_EAGER=true for local dev without Docker
+backend/
+  app.py              # Flask factory + all blueprints
+  models.py           # 30+ SQLAlchemy models
+  engine/             # orchestrator, filter_engine, cluster_engine, budget_allocator,
+                      # route_optimizer, assembler
+  routes/             # trips, auth, admin, bookings, expenses, discover, trip_tools,
+                      # trip_editor, profile, sharing, search, feedback, blogs, ops, dashboard
+  services/           # gemini_service, cache_service, booking_providers/, feature_flags
+  agents/             # destination_validator, itinerary_qa, memory_agent, mcp_context
+  tasks/              # score_updater, weather_sync, quality_scorer, embedding_sync
+frontend: D:\Projects\AltairGO-Platform  (React 19, Vite 7, Tailwind v4)
 ```
 
 ---
 
 ## 3. Environment Variables
 
-### Required in production
 ```bash
-DATABASE_URL        # PostgreSQL (Supabase) direct connection — NEVER use the pooler URL
-                    # Use: postgresql://postgres:***@db.amdtitsokkounoscgova.supabase.co:5432/postgres
-                    # NOT: postgresql://postgres.xxx@aws-1-ap-southeast-2.pooler.supabase.com (gives "Tenant not found")
-REDIS_URL           # Redis for Celery broker + rate limiting + metrics + share token cache
+# Required
+DATABASE_URL        # Direct Supabase: postgresql://postgres:***@db.amdtitsokkounoscgova.supabase.co:5432/postgres
+                    # NOT pooler URL — causes "Tenant not found"
+REDIS_URL           # Celery broker + rate limiting + metrics + share cache
 JWT_SECRET_KEY      # Min 32 chars
-ADMIN_ACCESS_KEY    # Admin portal API key
-GEMINI_API_KEY      # Google Gemini API key
-```
+ADMIN_ACCESS_KEY
+GEMINI_API_KEY
 
-### Optional / defaults
-```bash
-LOG_LEVEL           # default: INFO
-VALIDATION_STRICT   # default: false
-ALLOWED_ORIGINS     # default: https://altairgo.in,http://localhost:5173
-GEMINI_MODEL        # default: gemini-2.0-flash
-FLASK_ENV           # production | development | testing
-THEME_THRESHOLD     # default: 0.20 (Assembler day-theme overlap threshold)
-OLLAMA_URL          # default: http://localhost:11434 (local LLM fallback for Gemini 429)
-OLLAMA_MODEL        # default: llama3.2:3b
-```
+# Optional
+GEMINI_MODEL             # default: gemini-2.0-flash
+OLLAMA_URL               # default: http://localhost:11434
+OLLAMA_MODEL             # default: llama3.2:3b
+BOOKINGCOM_AFFILIATE_ID  # enables real hotel links; falls back to SimulatedProvider if unset
+ALLOWED_ORIGINS          # default: https://altairgo.in,http://localhost:5173
+THEME_THRESHOLD          # default: 0.20
 
-### Local dev only
-```bash
-DEV_EAGER=true      # Celery uses SQLite in-memory broker + task_always_eager=True
-                    # Extensions uses memory:// for rate limiter
-                    # Result: full itinerary generation works without a Celery worker process
-TESTING=true        # Same as DEV_EAGER but also switches DB to SQLite in-memory
+# Local dev
+DEV_EAGER=true      # task_always_eager + SQLite broker — no Celery worker needed
+TESTING=true        # DEV_EAGER + SQLite in-memory DB
 ```
 
 ---
 
-## 4. Flask Application Factory (`backend/app.py`)
+## 4. Flask App Factory (`backend/app.py`)
 
-`create_app(test_config=None)` — main factory. Blueprint registration order matters (first wins on duplicate routes):
-
-1. `trips_bp`
-2. `admin_bp`
-3. `auth_bp`
-4. `destinations_bp`
-5. `dashboard_bp` ← **authoritative for `/api/ops/summary`**
-6. `signals_bp`
-7. `ops_bp`
-8. `bookings_bp`
-9. `expenses_bp`
-10. `discover_bp`
-11. `trip_tools_bp`
-12. `trip_editor_bp`
-13. `profile_bp`
-14. `sharing_bp`
-15. `search_bp`
-16. `feedback_bp`
-17. `webhooks_bp`
-18. `blogs_bp`
-
-**DEV_EAGER wiring in app.py:**
-```python
-_eager = bool(app.config.get("TESTING")) or os.getenv("DEV_EAGER","false").lower() in ("1","true","yes")
-celery_app.conf.task_always_eager = _eager
-celery_app.conf.task_eager_propagates = _eager
-```
+Blueprint registration order (first wins on duplicate routes):
+`trips → admin → auth → destinations → dashboard` ← **authoritative for `/api/ops/summary`** `→ signals → ops → bookings → expenses → discover → trip_tools → trip_editor → profile → sharing → search → feedback → webhooks → blogs`
 
 ---
 
 ## 5. Database Layer
 
-- `db = SQLAlchemy()` — Flask app-context sessions (routes)
-- `SessionLocal()` — Standalone factory for Celery workers
-- Pool: `pool_pre_ping=True`, `pool_recycle=300`
-- Tests: SQLite in-memory when `TESTING=true`
-- **Prod migrations:** Use Supabase MCP `apply_migration` — never `flask db upgrade` (autogenerate breaks on PostGIS tables)
+- `db.session` in routes; `SessionLocal()` in Celery workers
+- `pool_pre_ping=True`, `pool_recycle=300` — restart Flask after live migrations to flush stale connections
 - **Always verify schema before coding:** `SELECT column_name, data_type FROM information_schema.columns WHERE table_name='...'` — models and DB have drifted before
 
 ---
 
-## 6. SQLAlchemy Models (`backend/models.py`)
+## 6. Key Models (`backend/models.py`)
 
-### Core Models
-| Model | Key Fields | Notes |
-|-------|-----------|-------|
-| `User` | id, name, email, password_hash, created_at | |
-| `UserProfile` | user_id, preferences (JSON), embedding | GET/PUT via profile_bp |
-| `Country` | id, name, code, currency, image | |
-| `State` | id, name, image, country_id | FK → Country |
-| `Destination` | 40+ fields: name, slug, lat/lng, h3_index_r7, popularity_score, compatible_traveler_types, budget_category, seasonal_score, rating, vibe_tags, image | `state_id` FK (no ORM relationship — manual join in search.py). 179/186 have NULL popularity_score. |
-| `Attraction` | name, type, entry_cost_min/max/child, rating, avg_visit_duration_hours, best_visit_time_hour, h3_index_r7/r9, popularity_score, compatible_traveler_types, seasonal_score, osm_id, wikidata_id, **opening_hours, closed_days, requires_advance_booking, accessibility_level, dietary_options, difficulty_level, is_photo_spot, best_photo_hour, queue_time_minutes, dress_code, guide_available, min_age** | All 11,539 attractions have seasonal_score computed via PL/pgSQL functions |
-| `HotelPrice` | destination_id, hotel_name, star_rating, category, price_per_night_min/max, booking_url, partner, availability_score | 562 rows seeded (186 destinations × 3 tiers). `category` must be "budget"/"mid"/"luxury" |
-| `FlightRoute` | origin_iata, destination_iata, avg_one_way_inr, avg_return_inr, duration_minutes, transport_type | 86 rows seeded |
-| `Trip` | user_id, trip_title, budget, duration, travelers, style, traveler_type, start_date, itinerary_json, total_cost, quality_score, **user_notes (JSON), is_customized** | user_notes stores `_share_token` key for sharing |
-| `AsyncJob` | id (UUID), user_id, status (queued\|processing\|completed\|failed), payload, result, error_message | |
-| `AttractionSignal` | attraction_id, user_id, event_type, traveler_type, trip_style, budget_tier, session_id | |
-| `AnalyticsEvent` | event_type, user_id, payload (JSON) | |
-| `EngineSetting` | key, value, description | Runtime-changeable config. 10 keys seeded. |
-| `DestinationRequest` | name, description, cost, tag, status | |
-| `Feedback` | user_id, itinerary_id, poi_id, rating, corrections, comment | corrections stores `{"tags": [...]}`. Valid tags include hyphenated frontend tags (great-value, well-paced, etc.) |
-| `FeatureFlag` | flag_key, is_active, traffic_pct | |
-| `DataSourceLog` | source_name, event_type, records_processed, status | |
-| `POIClosure` | attraction_id, closure_reason, start_date, end_date | |
-| `CurrencyRate` | base_currency, target_currency, rate, snapshot_date | |
-| `BlogPost` | title, category, date, read_time, image, excerpt, content, tags (JSON), author, published | Served at GET /blogs, GET /blogs/<id> |
+| Model | Notes |
+|-------|-------|
+| `User` | email/password_hash |
+| `UserProfile` | preferences (JSON), embedding |
+| `Destination` | 40+ fields; `state_id` FK — manual join (no ORM relationship); 179/186 NULL popularity_score |
+| `Attraction` | 11,539 rows; seasonal_score via PL/pgSQL; has opening_hours, closed_days, accessibility_level, dietary_options, min_age |
+| `HotelPrice` | 562 rows (186 destinations × 3 tiers); `category` must be "budget"/"mid"/"luxury" |
+| `FlightRoute` | 86 rows seeded |
+| `Trip` | itinerary_json (JSON); `user_notes["_share_token"]` for sharing; `is_customized` flag |
+| `AsyncJob` | status: queued/processing/completed/failed |
+| `Booking` | full lifecycle; status + user_approved + booking_ref + partner_name |
+| `WeatherAlert` | alert_date VARCHAR(10); 89 active alerts; nightly sync |
+| `DestinationInfo` | 29 rows seeded; injected as `pre_trip_info` in every itinerary |
+| `LocalEvent` | 23 events; start_date/end_date are DATE type → returns `datetime.date` (not string) |
+| `ExpenseEntry` | planned vs actual budget tracking |
+| `EngineSetting` | 10 keys; runtime config without redeploy |
+| `FeatureFlag` | flag_key, is_active, traffic_pct (60s DB cache) |
+| `Feedback` | corrections `{"tags": [...]}` — accepts hyphenated tags (great-value, well-paced, etc.) |
 
-### New Models (added via Supabase MCP migration)
-| Model | Key Fields | Notes |
-|-------|-----------|-------|
-| `WeatherAlert` | destination_id, alert_date (VARCHAR 10), alert_type, severity, description, probability_pct, source, expires_at (TIMESTAMPTZ), rainy_day_alternatives (JSON) | 89 active alerts. Populated nightly by weather_sync. |
-| `TripPermissionRequest` | trip_id, user_id, status, requested_items (JSON), user_response (JSON) | Pre-booking approval screen |
-| `Booking` | trip_id, user_id, booking_type, item_name, item_details (JSON), cost_inr, status, user_approved, booking_ref, booking_url, partner_name, notes, executed_at | Full booking lifecycle |
-| `DestinationInfo` | destination_id (unique), travel_advisory_level, travel_advisory_notes, visa_required_for (JSON), visa_on_arrival (JSON), visa_notes, vaccinations_recommended (JSON), health_notes, water_safety, altitude_meters, altitude_sickness_risk, tipping_guide (JSON), hidden_fees (JSON), emergency_contacts (JSON), local_phrases (JSON), connectivity_guide, currency_tips, dress_code_general, best_hospitals (JSON), nearest_embassy (JSON) | **29 rows seeded** for top Indian destinations. Injected as `pre_trip_info` in every itinerary. |
-| `LocalEvent` | destination_id, name, description, event_type, start_date (DATE — returns datetime.date), end_date (DATE), impact (positive/neutral/avoid), tips | **23 events seeded** (Holi, Baisakhi, Onam, Navratri, Durga Puja, Mysore Dasara, Diwali, Pushkar Fair, Hampi Utsav, Christmas Goa, JLF, etc.). Injected as `local_events` when trip window overlaps. |
-| `ExpenseEntry` | trip_id, user_id, category, description, amount_inr, trip_day | Tracked vs planned budget |
-
-### Known DB / Model Mismatches (already fixed)
-- `LocalEvent.start_date` / `end_date` — model says `String(10)`, DB has `DATE` type → SQLAlchemy returns `datetime.date` objects. Orchestrator serializes with `.isoformat()` before JSON encoding.
-- `DestinationInfo` — old schema had `visa_required` + `visa_info` (legacy columns still exist, model ignores them).
+**Known mismatch:** `LocalEvent.start_date/end_date` — model `String(10)`, DB `DATE` → always serialize with `.isoformat()`.
 
 ---
 
-## 7. The Itinerary Generation Pipeline
+## 7. Itinerary Generation Pipeline
 
-### Trigger flow
+### Flow
 ```
-POST /generate-itinerary
-  → Validate GenerateItinerarySchema
-    selected_destinations = [{"name": "Jaipur"}]  ← DestinationChoiceSchema (not plain strings)
-    travel_month = "12"                             ← string, not int
-  → Check cache (SHA-256 key)
-  → Create AsyncJob (status=queued)
-  → generate_itinerary_job.delay(job_id)
-    DEV_EAGER=true → runs synchronously, returns completed immediately
-  → Return {job_id, status} [202]
-
-GET /get-itinerary-status/<job_id>
-  → {job_id, status, result?, error?}
-
-GET /get-itinerary-status/<job_id>/stream   ← SSE endpoint
-  → Streams: {job_id, status, heartbeat?} while processing
-  → Terminal event includes full result: {job_id, status:"completed", result:{...}}
-  → Redis stream (job:events:<job_id>) if Redis available; DB poll fallback (1s interval)
-  → Frontend GeneratingPage.jsx connects here first; falls back to polling on failure
+POST /generate-itinerary → validate → cache check → AsyncJob(queued) → Celery task [202]
+GET  /get-itinerary-status/<job_id>         → poll status
+GET  /get-itinerary-status/<job_id>/stream  → SSE (Redis stream → DB poll fallback)
 ```
+`DEV_EAGER=true` → runs synchronously (~17s), no worker needed.
 
 ### base_date computation (orchestrator.py)
-When no `start_date` is provided:
-- Uses `travel_month` to derive year + month (10th day as default to catch mid-month events)
-- If no travel_month: uses first day of current month
-- This drives POIClosure filtering, LocalEvent window matching, WeatherAlert lookups
+No `start_date` → uses `travel_month` (10th day default) or first day of current month. Drives POIClosure filtering, LocalEvent window, WeatherAlert lookups.
 
-### 5-Step Deterministic Pipeline
-1. **FilterEngine** — Popularity ≥25, traveler compat, seasonal gate (≥40, default 70), budget cap, category max 2, accessibility, children, dietary, senior (no strenuous), min_age
-2. **ClusterEngine** — H3 r7 hex grouping (~5km), NULL GPS guard (0.0,0.0 = missing), theme diversity across days, top N hexes for N days
-3. **BudgetAllocator** — Tier splits (budget/mid/luxury), auto-demotion (<2000/1000 INR per person per day), real hotel cost from HotelPrice table, group discounts (5-9: 10%, 10+: 15%)
-4. **RouteOptimizer** — 15 km/h urban speed, sunrise priority, W→E ordering, queue_time_minutes added to timing, enriched output (difficulty, is_photo_spot, photo_tip, dress_code, guide_available, min_age, queue_wait_minutes)
-5. **Assembler** — Day themes (20% overlap threshold), document_checklist (personalised), daily_transport_guide (per-day cab mode + cost)
+### 5-Step Pipeline
+1. **FilterEngine** — Popularity ≥25, seasonal gate (≥40 default 70), traveler compat, budget cap, accessibility/dietary/children/senior/min_age
+2. **ClusterEngine** — H3 r7 hex grouping (~5km), NULL GPS guard (`0.0,0.0` = missing), theme diversity
+3. **BudgetAllocator** — Tier auto-demotion (<2000/<1000 INR/person/day), real hotel costs from HotelPrice, group discounts (5-9: 10%, 10+: 15%)
+4. **RouteOptimizer** — 15 km/h, sunrise priority, W→E ordering, queue_time_minutes added
+5. **Assembler** — Day themes (20% overlap threshold), document_checklist, daily_transport_guide
 
-### Post-Assembly: Gemini Polish
-- Model chain: `gemini-2.0-flash` → `gemini-2.0-flash-lite` (on 429) → **Ollama local** (`llama3.2:3b` at `OLLAMA_URL`) → graceful fallback to unpolished
-- Ollama: `POST /api/generate` with `stream: false`. Wraps response in Gemini-compatible shape.
-- Call 1: `polish_itinerary_text()` — rewrites descriptions, why_this_fits, local_secret, how_to_reach
-- Call 2: Meta — trip_title, smart_insights (3), packing_tips (3-5)
-- Blocked/all-failed → graceful fallback to unpolished itinerary (trip_title = "Trip to X")
+### Post-Assembly
+- **Gemini polish chain:** `gemini-2.0-flash` → (429) `flash-lite` → (429) `Ollama llama3.2:3b` → graceful unpolished fallback (trip_title = "Trip to X")
+- **Enrichment:** DestinationInfo → `pre_trip_info`; LocalEvent (by trip window) → `local_events`; WeatherAlert (high/extreme) → per-day `weather_alert`
 
-### Post-pipeline enrichment
-- **DestinationInfo** → `pre_trip_info` block (emergency contacts, visa, dress code, tips)
-- **LocalEvent** (filtered by trip window) → `local_events` block + auto-appended to `smart_insights`
-- **WeatherAlert** (high/extreme severity, matching date_strs) → per-day `weather_alert` field + `rainy_day_alternatives`
-
-### Itinerary JSON output shape
+### Itinerary JSON shape
 ```json
 {
   "trip_title", "total_cost", "cost_breakdown",
-  "itinerary": [{"day", "location", "theme", "pacing_level", "activities", "accommodation", "day_total"}],
-  "smart_insights": [], "packing_tips": [],
-  "travel_between_cities": [],
-  "document_checklist": [{"item", "category", "required"}],
-  "daily_transport_guide": [{"day", "mode", "estimated_cost_inr", "notes"}],
-  "pre_trip_info": {"connectivity_guide", "currency_tips", "dress_code_general", "emergency_contacts", "health", ...},
-  "local_events": [{"name", "description", "type", "start_date", "end_date", "impact", "tips"}],
-  "weather_alerts": {},
-  "traveler_profile": {"dietary", "accessibility", "children", "senior"}
+  "itinerary": [{"day","location","theme","pacing_level","activities","accommodation","day_total"}],
+  "smart_insights", "packing_tips", "travel_between_cities",
+  "document_checklist", "daily_transport_guide",
+  "pre_trip_info", "local_events", "weather_alerts", "traveler_profile"
 }
 ```
 
 ---
 
-## 8. Authentication & Authorization
+## 8. Authentication
 
-### Brute-Force Lockout (auth.py)
-- Redis key: `login:fail:<email>` — incremented on each failed attempt
-- 5 failures → 429 for 15 minutes (`_LOCKOUT_WINDOW = 900`)
-- Cleared on successful login
-- Degrades silently if Redis unavailable
-
-### JWT Flow
-- `POST /auth/register` → `{token, refresh_token, user}` [201]
-- `POST /auth/login` → same [200] — checks lockout first
-- `POST /auth/refresh` [JWT refresh] → `{token}` [200]
-- `GET /auth/me` [JWT] → `{id, name, email}` [200]
-- Access: 1hr | Refresh: 30d
-
-### Admin Auth
-- `X-Admin-Key` header OR JWT with `role="admin"` claim
-- Token issued via `POST /api/admin/verify-key {key}`
-
-### Frontend Token Keys
-- Traveler: `ag_token` + `ag_refresh_token` in localStorage
-- Admin: `ag_admin_token` in localStorage
-- Expired → `ag:unauthorized` CustomEvent dispatched → AuthContext clears state
+- **JWT:** Access 1hr / Refresh 30d
+- **Tokens:** `ag_token` + `ag_refresh_token` (traveler), `ag_admin_token` (admin) in localStorage
+- **Admin:** `X-Admin-Key` header OR JWT `role="admin"`. Token via `POST /api/admin/verify-key`
+- **Lockout:** Redis `login:fail:<email>` — 5 failures → 429 for 15min (`_LOCKOUT_WINDOW=900`). Degrades silently if Redis down.
+- **Expired token:** `ag:unauthorized` CustomEvent → AuthContext auto-logout
 
 ---
 
-## 9. All API Endpoints
+## 9. Celery Beat Schedule
 
-### Auth
-| Method | Path | Rate Limit | Description |
-|--------|------|-----------|-------------|
-| POST | `/auth/register` | 5/min | Register |
-| POST | `/auth/login` | 10/min | Login (lockout-protected) |
-| POST | `/auth/refresh` | 30/min | New access token |
-| GET | `/auth/me` | — | Current user |
-
-### Profile
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| GET | `/api/user/profile` | JWT | Get profile + preferences |
-| PUT | `/api/user/profile` | JWT | Update name + preferences (merged) |
-| DELETE | `/api/user/account` | JWT | GDPR anonymise (requires password) |
-
-### Search
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/search?q=&type=all\|destination\|country&limit=` | Full-text search; sorted exact→prefix→contains |
-
-### Trips
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| POST | `/generate-itinerary` | — | Create async job |
-| GET | `/get-itinerary-status/<job_id>` | — | Poll status |
-| GET | `/get-itinerary-status/<job_id>/stream` | — | SSE stream — emits result on completion |
-| POST | `/api/save-trip` | JWT | Save trip |
-| GET | `/get-trip/<trip_id>` | JWT | Fetch trip |
-| GET | `/api/user/trips` | JWT | Paginated list |
-| POST | `/api/trip/<id>/variants` | JWT | relaxed/balanced/intense variants |
-
-### Feedback & Reviews
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| POST | `/api/trip/<id>/review` | JWT | Submit trip review (rating 1-5, tags, comment) |
-| GET | `/api/trip/<id>/review` | JWT | Get my review for trip |
-| PUT | `/api/trip/<id>/review` | JWT | Update my review |
-| POST | `/api/attraction/<id>/review` | JWT | Rate individual attraction |
-| GET | `/api/destination/<id>/reviews` | — | Public aggregated reviews |
-
-### Blogs
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| GET | `/blogs` | — | List published blog posts |
-| GET | `/blogs/<id>` | — | Single blog post |
-| GET/POST | `/api/admin/blogs` | Admin | List all / create |
-| PUT/DELETE | `/api/admin/blogs/<id>` | Admin | Update / delete |
-
-### Sharing
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| POST | `/api/trip/<id>/share` | JWT | Create share token (Redis TTL 30d) |
-| DELETE | `/api/trip/<id>/share` | JWT | Revoke share link |
-| GET | `/api/shared/<token>` | — | Public read-only itinerary view |
-
-### Destinations
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/countries` | All countries |
-| GET | `/destinations` | Paginated + filterable |
-| GET | `/destinations/<id>` | Detail + attractions |
-| POST | `/api/destination-requests` | User suggestion |
-| POST | `/api/budget-calculator` | Estimate budget |
-
-### Discovery
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/discover/recommend` | AI recommendations (scored by budget/season/type/interests) |
-| GET | `/api/discover/best-time/<dest_id>` | Month matrix + top 3 months |
-| GET | `/api/discover/is-good-time?dest_id&month` | Quick verdict |
-| POST | `/api/discover/estimate-budget` | Full breakdown before committing |
-| POST | `/api/discover/compare` | Side-by-side comparison with winner |
-
-### Bookings
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| GET | `/api/trip/<id>/booking-plan` | JWT | Full booking plan |
-| POST | `/api/booking/<id>/approve` | JWT | Approve one booking |
-| POST | `/api/booking/<id>/reject` | JWT | Reject one booking |
-| POST | `/api/trip/<id>/booking-plan/execute-all` | JWT | Execute ALL approved (skips self_arranged) |
-| POST | `/api/booking/<id>/cancel` | JWT | Cancel booking |
-| GET | `/api/trip/<id>/bookings` | JWT | Dashboard grouped by type |
-| PUT | `/api/booking/<id>/customize` | JWT | Edit booking or mark self_arranged |
-| POST | `/api/trip/<id>/booking-plan/add-custom` | JWT | Add self-arranged booking |
-
-### Expenses
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| POST | `/api/trip/<id>/expense` | JWT | Log actual spending |
-| GET | `/api/trip/<id>/expenses` | JWT | Planned vs actual per category |
-| DELETE | `/api/expense/<id>` | JWT | Delete expense entry |
-
-### Trip Tools
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| GET | `/api/trip/<id>/readiness` | JWT | 0-100% score + checklist |
-| GET | `/api/trip/<id>/daily-briefing/<day>` | JWT | Full day-of briefing |
-| POST | `/api/trip/<id>/activity/swap` | JWT | Swap activity + re-optimize |
-| GET | `/api/trip/<id>/next-trip-ideas` | JWT | Post-trip destination ideas |
-| GET | `/api/trip/<id>/summary` | JWT | Post-trip summary (planned vs actual, highlights) |
-
-### Trip Editor
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| GET | `/api/trip/<id>/hotel-options` | JWT | Browse hotels by category/price |
-| PUT | `/api/trip/<id>/hotel` | JWT | Swap hotel (DB id or custom_hotel_name) |
-| POST | `/api/trip/<id>/day/<n>/activity/add` | JWT | Add activity (DB or custom) |
-| DELETE | `/api/trip/<id>/day/<n>/activity/remove` | JWT | Remove + re-optimize |
-| PUT | `/api/trip/<id>/day/<n>/activity/edit` | JWT | Edit cost/note/time/description |
-| PUT | `/api/trip/<id>/day/<n>/reorder` | JWT | Manual reorder + re-optimize |
-| PUT | `/api/trip/<id>/notes` | JWT | Save trip + per-day notes |
-
-### Admin
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| POST | `/api/admin/verify-key` | — | Get admin JWT |
-| GET | `/api/admin/stats` | Admin | Aggregate counts |
-| GET/POST | `/api/admin/destinations` | Admin | List / create |
-| PUT/DELETE | `/api/admin/destinations/<id>` | Admin | Update / delete |
-| GET/POST | `/api/admin/users` | Admin | User management |
-| GET/DELETE | `/api/admin/trips` | Admin | Trip management |
-| GET | `/api/admin/requests` | Admin | Destination requests |
-| POST | `/api/admin/requests/<id>/approve` | Admin | Approve |
-| POST | `/api/admin/requests/<id>/reject` | Admin | Reject |
-
-### Ops (Admin)
-| Method | Path | Description |
-|--------|------|-------------|
-| POST | `/api/ops/trigger-job` | Fire Celery job by name |
-| GET | `/api/ops/job-status/<task_id>` | Check task |
-| POST | `/api/ops/trigger-agent` | Fire AI agent |
-| GET/POST | `/api/ops/engine-config` | Read/update EngineSetting (10 whitelisted keys) |
-| GET | `/api/ops/summary` | Full dashboard stats |
-| GET | `/api/ops/live-metrics` | SSE stream (`?token=<jwt>`) |
-
-### Signals + Health
-| Method | Path | Description |
-|--------|------|-------------|
-| POST | `/api/signal` | Log behavioral signal |
-| GET | `/health` | DB + Redis status |
-
----
-
-## 10. Celery & Background Jobs
-
-### DEV_EAGER mode (local dev)
-When `DEV_EAGER=true`: broker = `sqla+sqlite:///:memory:`, `task_always_eager=True` → tasks run synchronously in the HTTP request. No worker process needed. Itinerary generation completes in ~17s (DB I/O + weather fetch).
-
-### Production Beat Schedule
 | Task | Schedule | Purpose |
 |------|----------|---------|
-| `run_osm_ingestion` | Sunday 03:00 | Fetch POIs from Overpass API |
-| `run_enrichment` | Monday 04:00 | Wikidata + Wikipedia |
-| `run_scoring` | 1st/month 05:00 | Popularity recalculation |
+| `run_weather_sync` | Daily 05:30 | Open-Meteo → WeatherAlert |
+| `run_score_update` | Daily 02:00 | Popularity + quality scores |
+| `run_quality_scoring` | Daily 04:30 | Trip quality scoring |
 | `run_price_sync` | Daily 06:00 & 18:00 | Hotel/flight pricing |
-| `run_score_update` | Daily 02:00 | update_scores() + update_scores_from_quality() |
-| `run_destination_validation` | Daily 01:00 | AI destination request validation |
 | `run_cache_warm` | Daily 03:30 | Pre-warm Redis |
+| `run_post_trip_summaries` | Daily | Post-trip summaries |
+| `run_destination_validation` | Daily 01:00 | AI validate destination requests |
 | `run_affiliate_health` | Every 6h | Partner API health |
-| `run_quality_scoring` | Daily 04:30 | Quality scoring of trips |
-| `run_weather_sync` | Daily 05:30 | Open-Meteo → WeatherAlert (186 destinations) |
-| `run_embedding_sync` | Weekly | Refresh destination embeddings |
-| `run_post_trip_summaries` | Daily | Generate post-trip summaries |
-| `heartbeat` | Every 5min | Worker availability |
+| `run_osm_ingestion` | Sunday 03:00 | POIs from Overpass API |
+| `run_embedding_sync` | Weekly | Destination embeddings |
+| `heartbeat` | Every 5min | Worker health |
 
 ---
 
-## 11. AI Agents
+## 10. Frontend (`D:\Projects\AltairGO-Platform`)
 
-| Agent | Trigger | Purpose |
-|-------|---------|---------|
-| `destination_validator_agent` | Daily / manual | AI validation of pending destination requests |
-| `itinerary_qa_agent` | Post-generation | Reviews itinerary for quality issues |
-| `memory_agent` | Per request | UserProfile.preferences + signal history → excluded_types + preferred_types |
-| `token_optimizer` | Pre-Gemini | Estimates char reduction |
-| `mcp_context_agent` | Per request | Fetches live destination context (wttr.in weather + festivals) |
-| `web_scraper_agent` | On demand | Scrapes additional attraction data |
+**Stack:** React 19, Vite 7, Tailwind v4, React Router v7, Framer Motion, Recharts
+**Proxy:** `/api/*`, `/auth/*`, `/generate-*`, `/get-trip`, `/get-itinerary-status`, `/countries`, `/destinations`, `/blogs` → `http://127.0.0.1:5000`
 
-Triggered via `POST /api/ops/trigger-agent {agent_key}` (admin only).
+**Generation flow (GeneratingPage.jsx):** `POST /generate-itinerary` → SSE stream → on `completed`: `saveTrip()` → redirect `/trip/:id`. Polls every 2s if SSE fails.
+
+**Review tags:** Frontend sends hyphenated (`great-value`, `well-paced`, `hidden-gems`, `family-friendly`, `romantic`, `adventure`, `foodie`, `budget-friendly`). Backend `_VALID_TAGS` accepts both hyphenated and underscore formats.
+
+**Design:** Primary `#4F46E5`, Accent `#F59E0B`, Background `#F8FAFC`. Currency: `₹{n.toLocaleString('en-IN')}`.
 
 ---
 
-## 12. Frontend (`D:\Projects\AltairGO-Platform`)
+## 11. Critical Business Logic
 
-**Tech:** React 19, Vite 7, Tailwind CSS v4, Framer Motion, Lucide React, React Router v7, Recharts, React Hot Toast
+**Schema gotchas:**
+- `selected_destinations` → `[{"name": "Jaipur"}]` not `["Jaipur"]`
+- `travel_month` → `"12"` (string) not `12`
 
-**Dev server:** `npm run dev` → `http://localhost:5173`
-
-**Proxy:** All `/api/*`, `/auth/*`, `/generate-*`, `/get-trip`, `/get-itinerary-status`, `/countries`, `/destinations`, `/blogs` → `http://127.0.0.1:5000`
-
-### Generation Flow (GeneratingPage.jsx)
-1. `POST /generate-itinerary` → `{job_id}`
-2. Navigate to `/planner/generating/{jobId}`
-3. **SSE first**: `EventSource` → `/get-itinerary-status/{jobId}/stream`
-   - Messages: `{ status, result, error_message, heartbeat }`
-   - On `completed` with `result`: calls `saveTrip()` → redirects to `/trip/{id}`
-4. **Polling fallback** (if SSE fails): polls every 2s
-
-### Routes
-| Path | Page | Auth |
-|------|------|------|
-| `/` | Landing | Public |
-| `/discover` | DestinationsPage | Public |
-| `/destination/:id` | DestinationDetails | Public |
-| `/login` | Login | Public only |
-| `/register` | Register | Public only |
-| `/trip/shared/:token` | SharedTrip | Public |
-| `/blogs` | BlogsPage | Public |
-| `/blogs/:id` | BlogDetails | Public |
-| `/planner` | TripPlannerPage | Semi-protected |
-| `/planner/generating/:jobId` | GeneratingPage | Public |
-| `/trips` | DashboardPage | Protected |
-| `/trip/:id` | TripViewerPage (6 tabs) | Protected |
-| `/trip/:id/briefing/:day` | DailyBriefingPage | Protected |
-| `/profile` | ProfilePage | Protected |
-| `/admin/login` | AdminLogin | Public |
-| `/admin` | AdminDashboard | Admin |
-| `/admin/data` | AdminData | Admin |
-| `/admin/users` | AdminUsers | Admin |
-| `/admin/agents` | AdminAgents | Admin |
-| `/admin/settings` | AdminSettings | Admin |
-
-### Auth tokens (localStorage)
-- `ag_token` + `ag_refresh_token` — traveler
-- `ag_admin_token` — admin
-- Expired: `ag:unauthorized` CustomEvent → AuthContext auto-logout
-
-### Review Tags (TripViewerPage → feedback.py)
-Frontend sends: `great-value`, `well-paced`, `hidden-gems`, `family-friendly`, `romantic`, `adventure`, `foodie`, `budget-friendly`
-Backend `_VALID_TAGS` accepts both hyphenated (frontend) and underscore (legacy) formats.
-
-### UI System (`src/components/ui/index.jsx`)
-Button (primary/secondary/ghost/danger + loading), Card, Input, Select, Textarea, Badge (status colors), Spinner, Modal (portal + framer-motion), ProgressBar, EmptyState, StatCard
-
-### Design Language
-- Primary: `#4F46E5` (indigo-600) + violet gradient
-- Accent: `#F59E0B` (amber-500 / gold)
-- Background: `#F8FAFC` (slate-50)
-- Currency: `₹{n.toLocaleString('en-IN')}`
-- Dates: `Intl.DateTimeFormat('en-IN', {...})`
-
----
-
-## 13. Critical Business Logic & Guards
-
-### Key Schema Gotchas
-- `selected_destinations` is `List[DestinationChoiceSchema]` → send `[{"name": "Jaipur"}]` not `["Jaipur"]`
-- `travel_month` is `String` → send `"12"` not `12`
-
-### Activity Proxy Pattern (trip_tools.py, trip_editor.py)
-RouteOptimizer expects SQLAlchemy model objects. When re-optimizing after edits, activities are plain dicts. Wrap with:
+**Activity proxy** (trip_tools.py, trip_editor.py): RouteOptimizer expects SQLAlchemy objects; wrap plain dicts:
 ```python
 type("_Proxy", (), {"attr": value, ...})()
 ```
 
-### Safe Itinerary Mutation
+**Safe itinerary mutation:**
 ```python
 itinerary = copy.deepcopy(trip.itinerary_json or {})
-# ... modify ...
+# modify...
 trip.itinerary_json = itinerary
 trip.is_customized = 1
 db.session.commit()
 ```
 
-### LocalEvent Date Serialization
-`LocalEvent.start_date` / `end_date` are `DATE` type in DB → SQLAlchemy returns `datetime.date` objects (not strings). Always serialize before putting into itinerary JSON:
+**LocalEvent date serialization:** DB returns `datetime.date` — always serialize before JSON:
 ```python
 def _date_str(v):
     return v.isoformat() if hasattr(v, "isoformat") else (v or None)
 ```
 
-### Trip Sharing (sharing.py)
-- Token stored in `trip.user_notes["_share_token"]`
-- Redis `share:<token>` → trip_id (30-day TTL) for O(1) lookup
-- Falls back to DB scan when Redis cold
-
-### Login Lockout (auth.py)
-- Redis `login:fail:<email>` — 5 attempts → 429 for 15 min
-- Degrades silently if Redis down
-
-### Booking execute-all
-- Filters `status="approved"` only — naturally excludes `self_arranged` bookings
-
-### Budget Auto-Demotion
+**Budget auto-demotion:**
 ```python
-daily_per_person = total_budget / (num_days × travelers)
+daily_per_person = total_budget / (num_days * travelers)
 if tier == 'luxury' and daily_per_person < 2000: tier = 'mid'
 if tier == 'mid'    and daily_per_person < 1000: tier = 'budget'
 ```
 
-### H3 NULL Guards
-- Missing `h3_index_r7` → compute on-the-fly from lat/lng
-- `(0.0, 0.0)` → treated as missing GPS
+**Booking provider:** All execution via `get_provider(booking_type).execute(booking)` (services/booking_providers/registry.py). Default: `SimulatedProvider` (`simulated=True`). Real Booking.com needs `BOOKINGCOM_AFFILIATE_ID`.
 
-### Seasonal Score Default
-- Missing month → defaults to **70**
+**Sharing:** Token in `trip.user_notes["_share_token"]`; Redis `share:<token>` → trip_id (30d TTL); falls back to DB scan when Redis cold.
 
-### Cache Keys
-SHA-256 of: origin_city, destination_names (sorted), budget, duration, travelers, style, traveler_type, travel_month, start_date, date_type, use_engine, dietary, accessibility, children, interests
+**Booking execute-all:** Only `status="approved"` — naturally excludes `self_arranged`.
 
-### Connection Pool Note
-After a failed SQL query, the connection enters an aborted-transaction state. With `pool_pre_ping=True` + `pool_recycle=300` this self-heals, but if you run migrations while Flask is live, **restart Flask** to flush stale connections.
+**H3 guards:** Missing `h3_index_r7` → compute from lat/lng; `(0.0, 0.0)` treated as missing GPS.
 
-### Gemini Polish Fallback Chain
-```
-gemini-2.0-flash (primary)
-  → 429 → wait 2s → gemini-2.0-flash-lite
-    → 429 → wait 2s → Ollama (http://localhost:11434, model: llama3.2:3b)
-      → unavailable → unpolished itinerary (graceful)
-```
-To enable Ollama locally: `ollama pull llama3.2:3b && ollama serve`
+**Cache key:** SHA-256 of: origin_city, destinations (sorted), budget, duration, travelers, style, traveler_type, travel_month, start_date, date_type, use_engine, dietary, accessibility, children, interests.
 
 ---
 
-## 14. Marshmallow Schemas
-
-| Schema | Key Fields |
-|--------|-----------|
-| `GenerateItinerarySchema` | destination_country, start_city (required); selected_destinations (List[DestinationChoiceSchema]); budget (min 500); duration (1–21); travelers (1–20); style, traveler_type, date_type, start_date, travel_month (str), interests, use_engine, **dietary_restrictions, accessibility, children_count, senior_count, children_min_age, special_occasion, fitness_level, from_city_iata** |
-| `DestinationChoiceSchema` | id (optional), name (required), estimated_cost_per_day (optional) |
-| `SaveTripSchema` | itinerary_json (required), trip_title, budget, duration |
-| `RegisterSchema` | name, email, password (min 12 chars) |
-| `LoginSchema` | email, password |
-| `DestinationRequestSchema` | name, description, cost, tag |
-| `CalculateBudgetSchema` | selected_destinations, duration |
-| `AttractionSignalSchema` | attraction_id, event_type, session_id, context |
-
-All schemas extend `BaseSchema` with `unknown = EXCLUDE`.
-
----
-
-## 15. Test Suite
-
-**Run:** `python -m pytest backend/tests/ -q --tb=short`
-**Result:** 188 passed, 1 skipped (rate limit test skipped when `RATELIMIT_ENABLED=False`)
-
-**Test config uses:**
-- `TESTING=true` → SQLite in-memory DB + SQLite Celery broker + memory:// Redis
-- `DEV_EAGER` is NOT set in tests (TESTING alone triggers eager mode)
-- `RATELIMIT_ENABLED=False`
-
----
-
-## 16. Local Dev — How to Start
+## 12. Tests
 
 ```bash
-# 1. Start Docker (Redis)
+python -m pytest backend/tests/ -q --tb=short  # 188 passed, 1 skipped
+```
+Config: `TESTING=true` → SQLite in-memory DB + memory:// rate limiter; `RATELIMIT_ENABLED=False`.
+
+---
+
+## 13. Local Dev
+
+```bash
 docker compose up -d redis
-
-# 2. (Optional) Start Ollama for Gemini polish fallback
-ollama serve   # must have run: ollama pull llama3.2:3b
-
-# 3. Start Flask backend (DEV_EAGER=true in .env — no Celery worker needed)
+ollama serve   # optional: needs `ollama pull llama3.2:3b` first
 .venv/Scripts/python.exe -m flask --app backend.app:create_app run --port 5000 --reload
-
-# 4. Start Vite frontend
 cd "D:/Projects/AltairGO-Platform" && npm run dev
-
-# Access: http://localhost:5173
-# API health: http://127.0.0.1:5000/health
-```
-
-**DEV_EAGER=true** in `.env`: Celery tasks run synchronously, itinerary completes in ~17s, no worker needed.
-
----
-
-## 17. Deployment (Production)
-
-### Docker Compose Services
-- `redis` — Celery broker + metrics + share cache
-- `app` — Flask via Gunicorn (port 5000), CPU-count workers, 120s timeout
-- `worker` — Celery worker (`--pool=solo` on Windows)
-- `beat` — Celery Beat (RedBeatScheduler)
-
-### Database
-- Production: Supabase PostgreSQL (project `amdtitsokkounoscgova`)
-- **Direct connection only** — pooler URL causes "Tenant or user not found"
-- Migrations: use `mcp__claude_ai_Supabase__apply_migration` with targeted DDL
-- Never run `flask db upgrade` in production (breaks on PostGIS tables)
-
-### Frontend
-```bash
-npm run build   # outputs to dist/ — serve via nginx or CDN
+# Frontend: http://localhost:5173  |  API health: http://127.0.0.1:5000/health
 ```
 
 ---
 
-## 18. Frontend UX Patterns & Design Decisions
+## 14. Production Deployment
 
-### Planner Wizard (5-step, `TripPlannerPage.jsx`)
-- **Step 1** — Single search input; AI recommend button; auto-detects country from first destination
-- **Step 2** — Date + duration with quick-pick buttons (3/5/7/10 days)
-- **Step 3** — Budget slider + manual input; live per-person-per-day hint with tier label
-- **Step 4** — Progressive disclosure: traveler type → family/senior counts → interests chips → Advanced section
-- **Step 5** — Summary review; Sparkles generate button
-
-### GeneratingPage (`/planner/generating/:jobId`)
-- Dark gradient background; animated dual-ring spinner
-- 9 rotating messages (every 2.5s): "Filtering 200+ attractions...", "Clustering with H3...", etc.
-- Progress bar 5%→100%; 3 stage indicators (Filtering / Routing / AI Polish)
-- SSE-first; 2s poll fallback; auto-saves trip on completion
-
-### TripViewerPage (6 tabs)
-- **Itinerary** — Pending bookings banner; each day card has "Day Brief" link
-- **Bookings** — 3-step explainer; status pills; booking cards with emoji icons
-- **Summary** — Post-trip stats; review form with star rating + tag chips (`great-value`, `well-paced`, etc.)
-- **Expenses** — Planned vs actual per category
-- **Readiness** — 0-100% checklist score
-- **Notes** — Trip + per-day notes editor
+- **Docker services:** `redis`, `app` (Gunicorn :5000), `worker` (`--pool=solo`), `beat` (RedBeatScheduler)
+- **DB:** Direct connection only — pooler URL → "Tenant not found"
+- **Migrations:** `mcp__claude_ai_Supabase__apply_migration` with targeted DDL; never `flask db upgrade`
+- **Frontend:** `npm run build` → `dist/` → nginx/CDN
 
 ---
 
-## 19. Architecture Patterns
+## 15. Architecture Patterns
 
-1. **Async-first generation** — Celery worker runs pipeline; HTTP returns job_id immediately (or synchronously in DEV_EAGER)
-2. **SSE real-time** — `/get-itinerary-status/<id>/stream` pushes result on completion; Redis stream if available, DB poll fallback
-3. **Cache-first** — SHA-256 Redis cache check before pipeline; 7-day TTL
-4. **Graceful degradation** — Gemini 429 → Ollama → unpolished; Redis down → rate limiting disabled
-5. **Dual session** — `db.session` in routes; `SessionLocal()` in Celery workers
-6. **Behavioral feedback loop** — AttractionSignal → score_updater → popularity scores
-7. **Runtime config** — EngineSetting table, changeable without redeploy
-8. **Dual admin auth** — X-Admin-Key header OR admin JWT
-9. **Blueprint order** — dashboard_bp before ops_bp wins `/api/ops/summary`
-10. **Activity proxy** — `type("_Proxy", (), {...})()` wraps dicts as model-like objects for RouteOptimizer re-optimization after edits
-11. **Safe mutation** — `copy.deepcopy(trip.itinerary_json)` before any edit, then reassign entire field
-12. **Schema management** — Supabase MCP for DDL (avoids PostGIS autogenerate conflicts)
+1. **Async-first** — Celery runs pipeline; HTTP returns job_id immediately (DEV_EAGER = synchronous)
+2. **SSE real-time** — `/stream` pushes result on completion; Redis stream → DB poll fallback
+3. **Cache-first** — SHA-256 Redis cache, 7-day TTL
+4. **Graceful degradation** — Gemini → Ollama → unpolished; Redis down → rate limiting disabled
+5. **Dual session** — `db.session` in routes / `SessionLocal()` in Celery workers
+6. **Activity proxy** — dict-to-model shim for RouteOptimizer re-optimization after edits
+7. **Safe mutation** — `deepcopy` itinerary JSON before edits, reassign whole field
+8. **Blueprint order** — `dashboard_bp` before `ops_bp` wins `/api/ops/summary`
+9. **Supabase MCP only** for DDL — avoids PostGIS autogenerate conflicts
 
 ---
 
-## 20. Current Status & Next Priorities (as of 2026-03-28)
+## 16. Known Limitations & Next Priorities
 
-### Working
-- Full 5-stage itinerary pipeline ✅
-- Real hotel data (562 rows, 186 destinations) ✅
-- Seasonal scores (all 11,539 attractions) ✅
-- Weather sync (89 active alerts) ✅
-- Pre-trip info (29 destinations seeded) ✅
-- Local events (23 events, 2026 calendar) ✅
-- SSE stream with result data ✅
-- Ollama fallback for Gemini 429 ✅
-- All frontend API endpoints wired ✅
-- Test suite: 188 passed ✅
+**Limitations:**
+- 179/186 destinations have NULL `popularity_score` → affects ranking quality
+- Embeddings: column is VARCHAR(1536) but models are 768/3072-dim — needs column resize
+- Blog posts: table + endpoints exist, no content seeded yet
+- Free-tier Gemini → 429 → unpolished fallback (fix: paid API key or Ollama)
 
-### Known Limitations
-- **Gemini polish**: free-tier 429 → unpolished fallback. Fix: production API key or Ollama (`ollama pull llama3.2:3b`)
-- **popularity_score**: 179/186 destinations still NULL → affects ranking quality
-- **Embeddings**: `destination.embedding` is VARCHAR(1536) but available models are 768/3072-dim. Needs column resize + local sentence-transformers
-- **Blog posts**: table exists, endpoint works, but no content seeded yet
-
-### Next Priorities
-1. Populate `popularity_score` for 179 null destinations (SQL-based, use attraction count + richness)
-2. Local embeddings via sentence-transformers (`all-MiniLM-L6-v2`, 384-dim) — resize column first
-3. Production Docker health checks + Gunicorn tuning
-4. Seed blog posts via admin panel
+**Next priorities:**
+1. Populate `popularity_score` for 179 null destinations (SQL: attraction count + richness)
+2. Local embeddings via `all-MiniLM-L6-v2` (384-dim) — resize column first
+3. Seed blog posts via admin panel
+4. Production Docker health checks + Gunicorn tuning

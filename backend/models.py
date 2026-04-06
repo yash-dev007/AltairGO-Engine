@@ -127,7 +127,7 @@ class Destination(Base):
     source                   = Column(String(50), nullable=True)
     confidence_score         = Column(Float, nullable=True)
     version                  = Column(Integer, default=1)
-    embedding                = Column(Vector(1536), nullable=True)
+    embedding                = Column(Vector(384), nullable=True)
 
 
 class Attraction(Base):
@@ -210,7 +210,7 @@ class Attraction(Base):
     source                   = Column(String(50), nullable=True)
     confidence_score         = Column(Float, nullable=True)
     version                  = Column(Integer, default=1)
-    embedding                = Column(Vector(1536), nullable=True)
+    embedding                = Column(Vector(384), nullable=True)
 
 
 class AttractionSignal(Base):
