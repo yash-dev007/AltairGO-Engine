@@ -8,7 +8,7 @@ All tests import from here. Never duplicate fixture logic.
 import os
 from pathlib import Path
 
-TEST_DB_PATH = Path("backend_test.db").absolute()
+TEST_DB_PATH = Path(f"backend_test_{os.getpid()}.db").absolute()
 TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL", f"sqlite:///{TEST_DB_PATH}")
 os.environ["TESTING"] = "true"
 os.environ["DATABASE_URL"] = TEST_DATABASE_URL
@@ -19,6 +19,11 @@ import pytest
 import json
 from unittest.mock import MagicMock, patch
 from datetime import datetime
+
+
+def _reset_test_db():
+    from backend.database import init_db
+    init_db()
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -42,8 +47,7 @@ def app():
     }
     app = create_app(test_config)
     with app.app_context():
-        from backend.database import init_db
-        init_db()
+        _reset_test_db()
         yield app
         
     # Cleanup DB file after tests if it exists
@@ -55,7 +59,7 @@ def app():
 
 
 @pytest.fixture(scope="function")
-def client(app):
+def client(app, db):
     """Flask test client — fresh per test function."""
     return app.test_client()
 
@@ -66,11 +70,10 @@ def db(app):
     Database session — drops and recreates schema before each test for
     full isolation. Yields a wrapper with .engine and .session attrs.
     """
-    from backend.database import db as _db, Base
+    from backend.database import db as _db
 
     with app.app_context():
-        Base.metadata.drop_all(bind=_db.engine)
-        Base.metadata.create_all(bind=_db.engine)
+        _reset_test_db()
         yield _db
         _db.session.remove()
 

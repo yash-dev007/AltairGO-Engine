@@ -105,7 +105,7 @@ return jsonify({"success": True, "data": {...}}), 200
 - Create: `backend/middleware/logging.py`
 - Modify: `backend/app.py` (register middleware)
 
-- [ ] **Step 1.1: Write the failing test**
+- [x] **Step 1.1: Write the failing test**
 
 ```python
 # backend/tests/test_hardening.py
@@ -705,6 +705,16 @@ git commit -m "feat: add Celery retry hardening + task result tracking to Redis"
 ```
 
 ---
+
+## Completion Status
+
+- Completed on `2026-04-10`.
+- C2 was implemented with a shared response normalizer in `backend/utils/responses.py` plus explicit `@blueprint.after_request` hooks in all 18 route files.
+- Verified with:
+  `python -m pytest backend/tests/test_hardening.py -q --tb=short`
+  `python -m pytest backend/tests/test_destinations.py -q --tb=short`
+  `python -m pytest backend/tests/test_admin.py -q --tb=short`
+- Full `python -m pytest backend/tests/ -q --tb=short` remains slower than the available execution window in this environment.
 
 ## Self-Review Checklist
 

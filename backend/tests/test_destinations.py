@@ -12,20 +12,19 @@ class TestCountries:
     def test_returns_list(self, client, seed_country):
         res = client.get("/countries")
         assert res.status_code == 200
-        data = res.get_json()
-        # /countries is NOT paginated yet, still returns plain list
+        data = res.get_json()["data"]
         assert isinstance(data, list)
         assert len(data) >= 1
 
     def test_country_has_required_fields(self, client, seed_country):
         res = client.get("/countries")
-        country = res.get_json()[0]
+        country = res.get_json()["data"][0]
         for field in ["id", "name", "code"]:
             assert field in country, f"Missing field: {field}"
 
     def test_india_present_after_seed(self, client, seed_country):
         res = client.get("/countries")
-        names = [c["name"] for c in res.get_json()]
+        names = [c["name"] for c in res.get_json()["data"]]
         assert "India" in names
 
 
