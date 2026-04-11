@@ -12,11 +12,17 @@ from backend.request_validation import load_request_json
 from backend.schemas import GenerateItinerarySchema, SaveTripSchema
 from backend.services.gemini_service import get_gemini_service
 from backend.services.cache_service import get_cached, set_cached
+from backend.utils.responses import normalize_api_response
 from backend.utils.helpers import _extract_destination_names, _is_truthy
 
 trips_bp = Blueprint("trips", __name__)
 log = structlog.get_logger(__name__)
 GEMINI_SERVICE = get_gemini_service()
+
+
+@trips_bp.after_request
+def _normalize_trips_response(response):
+    return normalize_api_response(response)
 
 
 @trips_bp.route("/generate-itinerary", methods=["POST"])

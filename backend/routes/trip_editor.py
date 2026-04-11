@@ -63,9 +63,15 @@ from backend.engine.route_optimizer import RouteOptimizer
 from backend.models import (
     Attraction, Booking, Destination, HotelPrice, Trip, TripPermissionRequest,
 )
+from backend.utils.responses import normalize_api_response
 
 trip_editor_bp = Blueprint("trip_editor", __name__)
 log = structlog.get_logger(__name__)
+
+
+@trip_editor_bp.after_request
+def _normalize_trip_editor_response(response):
+    return normalize_api_response(response)
 
 _ALLOWED_HOTEL_URL_DOMAINS = {
     "booking.com", "hotels.com", "agoda.com", "makemytrip.com",

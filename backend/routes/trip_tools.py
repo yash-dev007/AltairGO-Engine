@@ -22,6 +22,7 @@ Answers the questions travellers ask AFTER they have a plan but BEFORE they trav
        seeded from the completed trip's activity types and destination vibes.
 """
 
+import copy
 import json
 from datetime import date, datetime, timedelta
 
@@ -31,6 +32,7 @@ from flask_jwt_extended import get_jwt_identity, jwt_required
 
 from backend.database import db
 from backend.engine.route_optimizer import RouteOptimizer
+from backend.utils.responses import normalize_api_response
 from backend.models import (
     Attraction, Booking, Destination, DestinationInfo, LocalEvent,
     Trip, TripPermissionRequest, WeatherAlert,
@@ -38,6 +40,11 @@ from backend.models import (
 
 trip_tools_bp = Blueprint("trip_tools", __name__)
 log = structlog.get_logger(__name__)
+
+
+@trip_tools_bp.after_request
+def _normalize_trip_tools_response(response):
+    return normalize_api_response(response)
 
 # Items that should be advance-booked (checked in readiness)
 _ADVANCE_BOOKING_TYPES = frozenset({"hotel", "flight", "airport_transfer"})
@@ -698,6 +705,72 @@ def swap_activity(trip_id: int):
 
 
 # ── Next Trip Ideas ───────────────────────────────────────────────────────────
+
+@trip_tools_bp.post("/api/trip/<int:trip_id>/reorder-activity")
+@jwt_required()
+def reorder_activity(trip_id: int):
+    """Reorder activities within a saved trip day."""
+    user_id = int(get_jwt_identity())
+    body = request.get_json() or {}
+
+    day_index = body.get("day_index")
+    from_index = body.get("from_index")
+    to_index = body.get("to_index")
+
+    if any(value is None for value in (day_index, from_index, to_index)):
+        return jsonify({
+            "success": False,
+            "error": "day_index, from_index, and to_index are required",
+            "code": "ERR_VALIDATION",
+        }), 400
+
+    trip = db.session.get(Trip, trip_id)
+    if not trip or trip.user_id != user_id:
+        return jsonify({
+            "success": False,
+            "error": "Trip not found",
+            "code": "ERR_NOT_FOUND",
+        }), 404
+
+    itinerary_root = copy.deepcopy(trip.itinerary_json or [])
+    if isinstance(itinerary_root, dict):
+        days = itinerary_root.get("itinerary", [])
+    else:
+        days = itinerary_root
+    if day_index < 0 or day_index >= len(days):
+        return jsonify({
+            "success": False,
+            "error": "Day not found",
+            "code": "ERR_VALIDATION",
+        }), 400
+
+    activities = list(days[day_index].get("activities", []))
+    if from_index < 0 or to_index < 0 or from_index >= len(activities) or to_index >= len(activities):
+        return jsonify({
+            "success": False,
+            "error": f"Activity index out of range (day has {len(activities)} activities)",
+            "code": "ERR_VALIDATION",
+        }), 400
+
+    activities.insert(to_index, activities.pop(from_index))
+    days[day_index]["activities"] = activities
+    if isinstance(itinerary_root, dict):
+        itinerary_root["itinerary"] = days
+        trip.itinerary_json = itinerary_root
+    else:
+        trip.itinerary_json = days
+    trip.is_customized = 1
+    db.session.commit()
+
+    log.info(
+        "activity_reordered",
+        trip_id=trip_id,
+        day_index=day_index,
+        from_index=from_index,
+        to_index=to_index,
+    )
+    return jsonify({"success": True, "data": {"activities": activities}}), 200
+
 
 @trip_tools_bp.route("/api/trip/<int:trip_id>/next-trip-ideas", methods=["GET"])
 @jwt_required()

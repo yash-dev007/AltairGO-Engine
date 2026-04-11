@@ -7,9 +7,15 @@ from backend.models import Attraction, AttractionSignal
 from backend.request_validation import load_request_json
 from backend.schemas import AttractionSignalSchema
 from backend.extensions import limiter
+from backend.utils.responses import normalize_api_response
 
 signals_bp = Blueprint("signals", __name__)
 log = structlog.get_logger(__name__)
+
+
+@signals_bp.after_request
+def _normalize_signals_response(response):
+    return normalize_api_response(response)
 
 ALLOWED_SIGNAL_EVENTS = {"view", "save", "remove", "swap", "book_click"}
 

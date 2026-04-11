@@ -11,9 +11,15 @@ from backend.extensions import limiter
 from backend.models import User
 from backend.request_validation import load_request_json
 from backend.schemas import LoginSchema, RegisterSchema
+from backend.utils.responses import normalize_api_response
 
 auth_bp = Blueprint('auth', __name__, url_prefix='/auth')
 log = structlog.get_logger(__name__)
+
+
+@auth_bp.after_request
+def _normalize_auth_response(response):
+    return normalize_api_response(response)
 
 _LOCKOUT_MAX_ATTEMPTS = 5
 _LOCKOUT_WINDOW = 900  # 15 minutes

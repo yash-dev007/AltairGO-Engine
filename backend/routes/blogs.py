@@ -8,8 +8,14 @@ from flask import Blueprint, request, jsonify
 from backend.database import db
 from backend.models import BlogPost
 from backend.utils.auth import require_admin
+from backend.utils.responses import normalize_api_response
 
 blogs_bp = Blueprint('blogs', __name__)
+
+
+@blogs_bp.after_request
+def _normalize_blogs_response(response):
+    return normalize_api_response(response)
 
 
 # ── Helpers ───────────────────────────────────────────────────────

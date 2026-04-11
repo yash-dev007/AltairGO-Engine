@@ -10,8 +10,14 @@ from backend.request_validation import load_request_json
 from backend.schemas import CalculateBudgetSchema, DestinationRequestSchema
 from backend.extensions import limiter
 from backend.constants import PAGINATION_MAX_PAGE
+from backend.utils.responses import normalize_api_response
 
 destinations_bp = Blueprint('destinations', __name__)
+
+
+@destinations_bp.after_request
+def _normalize_destinations_response(response):
+    return normalize_api_response(response)
 
 # Style cost multipliers — read from env so they can be overridden at deploy time
 # without a code change.  The Settings page can expose these as writable engine config.

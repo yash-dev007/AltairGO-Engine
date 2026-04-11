@@ -5,10 +5,16 @@ from backend.constants import ALLOWED_ENGINE_CONFIG_KEYS
 from backend.services.metrics_service import get_metric
 from backend.database import db
 from backend.models import EngineSetting
+from backend.utils.responses import normalize_api_response
 import structlog
 
 log = structlog.get_logger(__name__)
 ops_bp = Blueprint("ops", __name__)
+
+
+@ops_bp.after_request
+def _normalize_ops_response(response):
+    return normalize_api_response(response)
 
 VALID_JOBS = {
     "osm_ingestion": "backend.celery_tasks.run_osm_ingestion",

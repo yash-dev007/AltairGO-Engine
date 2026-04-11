@@ -8,9 +8,15 @@ from flask_jwt_extended import get_jwt_identity, jwt_required
 
 from backend.database import db
 from backend.models import Trip
+from backend.utils.responses import normalize_api_response
 
 sharing_bp = Blueprint("sharing", __name__)
 log = structlog.get_logger(__name__)
+
+
+@sharing_bp.after_request
+def _normalize_sharing_response(response):
+    return normalize_api_response(response)
 
 _SHARE_TTL = 60 * 60 * 24 * 30  # 30 days
 _redis_pool: dict = {}  # keyed by REDIS_URL → ConnectionPool (avoids per-request connections)

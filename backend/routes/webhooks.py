@@ -33,9 +33,15 @@ from flask import Blueprint, g, jsonify, request
 
 from backend.database import db
 from backend.models import Booking
+from backend.utils.responses import normalize_api_response
 
 webhooks_bp = Blueprint("webhooks", __name__)
 log = structlog.get_logger(__name__)
+
+
+@webhooks_bp.after_request
+def _normalize_webhooks_response(response):
+    return normalize_api_response(response)
 
 _BOOKINGCOM_SECRET = os.getenv("BOOKINGCOM_WEBHOOK_SECRET", "")
 _MMT_SECRET = os.getenv("MMT_WEBHOOK_SECRET", "")

@@ -8,8 +8,14 @@ from backend.database import db
 from backend.models import AnalyticsEvent, AttractionSignal, DataSourceLog, Destination, DestinationRequest, Trip, User
 from backend.services.metrics_service import get_metric, get_metrics_redis
 from backend.utils.auth import require_admin
+from backend.utils.responses import normalize_api_response
 
 dashboard_bp = Blueprint("dashboard", __name__)
+
+
+@dashboard_bp.after_request
+def _normalize_dashboard_response(response):
+    return normalize_api_response(response)
 
 
 def _metric_int(metric_name: str, default: int = 0) -> int:

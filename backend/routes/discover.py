@@ -32,11 +32,17 @@ from flask import Blueprint, jsonify, request
 from backend.database import db
 from backend.extensions import limiter
 from backend.models import Attraction, Destination, DestinationInfo, HotelPrice, State
+from backend.utils.responses import normalize_api_response
 
 _MAX_DEST_IDS = 10  # Maximum destination IDs accepted in a single estimate-budget call
 
 discover_bp = Blueprint("discover", __name__)
 log = structlog.get_logger(__name__)
+
+
+@discover_bp.after_request
+def _normalize_discover_response(response):
+    return normalize_api_response(response)
 
 # Month name ↔ short-key mapping (seasonal_score keys are 3-letter lowercase)
 _MONTH_MAP = {

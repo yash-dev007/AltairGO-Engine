@@ -12,9 +12,15 @@ from backend.models import (
 from backend.request_validation import load_request_json
 from backend.schemas import VerifyAdminKeySchema, UpdateDestinationSchema
 from backend.utils.auth import require_admin
+from backend.utils.responses import normalize_api_response
 from backend.extensions import limiter
 
 admin_bp = Blueprint('admin', __name__)
+
+
+@admin_bp.after_request
+def _normalize_admin_response(response):
+    return normalize_api_response(response)
 
 
 # ── Auth ─────────────────────────────────────────────────────────

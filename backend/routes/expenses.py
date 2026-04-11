@@ -23,12 +23,18 @@ import structlog
 from flask import Blueprint, g, jsonify, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
 from marshmallow import EXCLUDE, Schema, ValidationError, fields, validate
+from backend.utils.responses import normalize_api_response
 
 from backend.database import db
 from backend.models import ExpenseEntry, Trip
 
 expenses_bp = Blueprint("expenses", __name__)
 log = structlog.get_logger(__name__)
+
+
+@expenses_bp.after_request
+def _normalize_expenses_response(response):
+    return normalize_api_response(response)
 
 _VALID_CATEGORIES = frozenset({
     "accommodation", "food", "transport", "activity", "shopping", "misc",

@@ -9,9 +9,15 @@ from backend.models import (
     AnalyticsEvent, AsyncJob, AttractionSignal, ExpenseEntry,
     Feedback, User, UserProfile,
 )
+from backend.utils.responses import normalize_api_response
 
 profile_bp = Blueprint("profile", __name__)
 log = structlog.get_logger(__name__)
+
+
+@profile_bp.after_request
+def _normalize_profile_response(response):
+    return normalize_api_response(response)
 
 # Allowlist of preference keys that users may set via the API.
 # Unknown keys are silently dropped to prevent injection of trust signals.

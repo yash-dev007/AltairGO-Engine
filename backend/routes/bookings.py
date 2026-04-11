@@ -33,6 +33,7 @@ import structlog
 from flask import Blueprint, jsonify, request, g
 from flask_jwt_extended import get_jwt_identity, jwt_required
 from backend.extensions import limiter
+from backend.utils.responses import normalize_api_response
 
 from backend.constants import (
     AIRPORT_TRANSFER_ESTIMATE_INR,
@@ -44,6 +45,11 @@ from backend.models import Booking, FlightRoute, Trip, TripPermissionRequest
 
 bookings_bp = Blueprint("bookings", __name__)
 log = structlog.get_logger(__name__)
+
+
+@bookings_bp.after_request
+def _normalize_bookings_response(response):
+    return normalize_api_response(response)
 
 # Domain allowlist for booking URLs — reject anything not on this list
 _ALLOWED_BOOKING_DOMAINS = frozenset({

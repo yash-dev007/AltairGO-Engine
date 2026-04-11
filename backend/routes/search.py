@@ -3,8 +3,14 @@ from flask import Blueprint, jsonify, request
 
 from backend.database import db
 from backend.models import Country, Destination, State
+from backend.utils.responses import normalize_api_response
 
 search_bp = Blueprint("search", __name__)
+
+
+@search_bp.after_request
+def _normalize_search_response(response):
+    return normalize_api_response(response)
 
 
 def _search_sort_key(r: dict, q_lower: str) -> int:

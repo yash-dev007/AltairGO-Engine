@@ -22,9 +22,15 @@ from flask_jwt_extended import get_jwt_identity, jwt_required
 from backend.database import db
 from backend.extensions import limiter
 from backend.models import Attraction, Destination, Feedback, Trip
+from backend.utils.responses import normalize_api_response
 
 feedback_bp = Blueprint("feedback", __name__)
 log = structlog.get_logger(__name__)
+
+
+@feedback_bp.after_request
+def _normalize_feedback_response(response):
+    return normalize_api_response(response)
 
 _VALID_TAGS = frozenset({
     # Frontend tags (hyphenated)
