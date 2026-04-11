@@ -3,7 +3,10 @@ celery_tasks.py — Celery task wrappers for all pipeline stages.
 Each task wraps the corresponding script's run function.
 """
 
+import json
 import os
+import time
+from datetime import datetime, timezone
 from backend.celery_config import celery_app
 from backend.database import SessionLocal
 from backend.engine.orchestrator import TripGenerationOrchestrator
@@ -56,6 +59,42 @@ def _run_and_record(task_name: str, fn):
 from backend.utils.helpers import _is_truthy
 
 
+def _write_task_result(task_name: str, status: str, duration_s: float, error: str | None = None) -> None:
+    """Write task execution metadata to Redis without affecting task execution."""
+    try:
+        from backend.services.cache_service import get_redis_client
+
+        client = get_redis_client()
+        if client is None:
+            return
+
+        payload = {
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "status": status,
+            "duration_s": round(duration_s, 2),
+        }
+        client.set(f"celery:task:{task_name}:last", json.dumps(payload))
+        if error:
+            client.lpush(
+                f"celery:errors:{task_name}",
+                json.dumps({"ts": payload["ts"], "error": error[:500]}),
+            )
+            client.ltrim(f"celery:errors:{task_name}", 0, 9)
+    except Exception:
+        pass
+
+
+def _run_task_with_retry(task, task_name: str, runner):
+    start = time.monotonic()
+    try:
+        result = runner()
+        _write_task_result(task_name, "success", time.monotonic() - start)
+        return result
+    except Exception as exc:
+        _write_task_result(task_name, "failed", time.monotonic() - start, str(exc))
+        raise task.retry(exc=exc)
+
+
 def _publish_job_event(job_id: str, status: str):
     """Publish a job completion event to a Redis stream for SSE subscribers."""
     try:
@@ -69,119 +108,129 @@ def _publish_job_event(job_id: str, status: str):
         pass  # Never let SSE notification failure break the task
 
 
-@celery_app.task(name="backend.celery_tasks.run_osm_ingestion")
-def run_osm_ingestion():
+@celery_app.task(name="backend.celery_tasks.run_osm_ingestion", bind=True, max_retries=3, default_retry_delay=60)
+def run_osm_ingestion(self):
     """Stage 1: OSM POI Ingestion for all destinations."""
     log.info("Celery: Starting OSM ingestion...")
     from backend.scripts.ingest_osm_data import run_ingestion
 
-    result = _run_and_record("osm_ingestion", run_ingestion)
+    result = _run_task_with_retry(self, "run_osm_ingestion", lambda: _run_and_record("osm_ingestion", run_ingestion))
     log.info("Celery: OSM ingestion complete.")
     return result
 
 
-@celery_app.task(name="backend.celery_tasks.run_enrichment")
-def run_enrichment():
+@celery_app.task(name="backend.celery_tasks.run_enrichment", bind=True, max_retries=3, default_retry_delay=60)
+def run_enrichment(self):
     """Stage 2: Wikidata + Wikipedia + Google Places enrichment."""
     log.info("Celery: Starting enrichment pipeline...")
     from backend.scripts.enrich_attractions import run_enrichment as _run
 
-    result = _run_and_record("enrichment", _run)
+    result = _run_task_with_retry(self, "run_enrichment", lambda: _run_and_record("enrichment", _run))
     mark_status("agent", "mcp_context", "ok", result)
     mark_status("agent", "web_scraper", "ok", result)
     log.info("Celery: Enrichment complete.")
     return result
 
 
-@celery_app.task(name="backend.celery_tasks.run_scoring")
-def run_scoring():
+@celery_app.task(name="backend.celery_tasks.run_scoring", bind=True, max_retries=3, default_retry_delay=60)
+def run_scoring(self):
     """Stage 3: Intelligence scoring (popularity + seasonal)."""
     log.info("Celery: Starting scoring pipeline...")
     from backend.scripts.score_attractions import run_scoring as _run
 
-    result = _run_and_record("scoring", _run)
+    result = _run_task_with_retry(self, "run_scoring", lambda: _run_and_record("scoring", _run))
     mark_status("agent", "memory_agent", "ok", result)
     log.info("Celery: Scoring complete.")
     return result
 
 
-@celery_app.task(name="backend.celery_tasks.run_price_sync")
-def run_price_sync():
+@celery_app.task(name="backend.celery_tasks.run_price_sync", bind=True, max_retries=3, default_retry_delay=60)
+def run_price_sync(self):
     """Stage 4: Hotel, flight, and attraction price sync."""
     log.info("Celery: Starting price sync...")
     from backend.scripts.sync_prices import run_sync
 
-    result = _run_and_record("price_sync", run_sync)
+    result = _run_task_with_retry(self, "run_price_sync", lambda: _run_and_record("price_sync", run_sync))
     log.info("Celery: Price sync complete.")
     return result
 
 
-@celery_app.task(name="backend.celery_tasks.run_score_update")
-def run_score_update():
+@celery_app.task(name="backend.celery_tasks.run_score_update", bind=True, max_retries=3, default_retry_delay=60)
+def run_score_update(self):
     """Behavioral score update from AttractionSignal data + quality feedback loop."""
     log.info("Celery: Starting behavioral score update...")
     from backend.tasks.score_updater import update_scores, update_scores_from_quality
 
-    result = _run_and_record("score_update", update_scores)
-    # Secondary pass: blend Trip.quality_score into attraction popularity_score.
-    # Runs after behavioral update so both signals compound correctly.
-    try:
-        update_scores_from_quality()
-    except Exception as exc:
-        log.warning(f"Quality score update failed (non-fatal): {exc}")
+    def _runner():
+        result = _run_and_record("score_update", update_scores)
+        try:
+            update_scores_from_quality()
+        except Exception as exc:
+            log.warning(f"Quality score update failed (non-fatal): {exc}")
+        return result
+
+    result = _run_task_with_retry(self, "run_score_update", _runner)
     log.info("Celery: Behavioral score update complete.")
     return result
 
 
-@celery_app.task(name="backend.celery_tasks.run_destination_validation")
-def run_destination_validation():
+@celery_app.task(name="backend.celery_tasks.run_destination_validation", bind=True, max_retries=3, default_retry_delay=60)
+def run_destination_validation(self):
     log.info("Celery: Starting destination validation...")
     from backend.agents.destination_validator_agent import DestinationValidatorAgent
 
     session = SessionLocal()
     try:
         agent = DestinationValidatorAgent(session)
-        result = _run_and_record("destination_validation", agent.run_pending_requests)
+        result = _run_task_with_retry(
+            self,
+            "run_destination_validation",
+            lambda: _run_and_record("destination_validation", agent.run_pending_requests),
+        )
         mark_status("agent", "destination_validator", "ok", result)
         return result
     finally:
         session.close()
 
 
-@celery_app.task(name="backend.celery_tasks.run_cache_warm")
-def run_cache_warm():
+@celery_app.task(name="backend.celery_tasks.run_cache_warm", bind=True, max_retries=3, default_retry_delay=60)
+def run_cache_warm(self):
     log.info("Celery: Starting cache warm...")
     from backend.tasks.cache_warmer import CacheWarmerAgent
 
     session = SessionLocal()
     try:
         agent = CacheWarmerAgent(session)
-        result = _run_and_record("cache_warm", agent.warm)
+        result = _run_task_with_retry(self, "run_cache_warm", lambda: _run_and_record("cache_warm", agent.warm))
         mark_status("agent", "cache_warmer", "ok", result)
         return result
     finally:
         session.close()
 
 
-@celery_app.task(name="backend.celery_tasks.run_affiliate_health")
-def run_affiliate_health():
+@celery_app.task(name="backend.celery_tasks.run_affiliate_health", bind=True, max_retries=3, default_retry_delay=60)
+def run_affiliate_health(self):
     log.info("Celery: Starting affiliate health check...")
     from backend.tasks.affiliate_health import check_affiliate_health
 
-    result = _run_and_record("affiliate_health", check_affiliate_health)
+    result = _run_task_with_retry(self, "run_affiliate_health", lambda: _run_and_record("affiliate_health", check_affiliate_health))
     mark_status("agent", "affiliate_health", "ok", result)
     return result
 
 
-@celery_app.task(name="backend.celery_tasks.run_quality_scoring")
-def run_quality_scoring():
+@celery_app.task(name="backend.celery_tasks.run_quality_scoring", bind=True, max_retries=3, default_retry_delay=60)
+def run_quality_scoring(self):
     log.info("Celery: Starting itinerary quality scoring...")
     from backend.tasks.quality_scorer import ItineraryQualityPipeline
 
     session = SessionLocal()
     try:
         pipeline = ItineraryQualityPipeline(session)
-        result = _run_and_record("quality_scoring", pipeline.score_all_trips)
+        result = _run_task_with_retry(
+            self,
+            "run_quality_scoring",
+            lambda: _run_and_record("quality_scoring", pipeline.score_all_trips),
+        )
         mark_status("agent", "quality_scorer", "ok", result)
         mark_status("agent", "itinerary_qa", "ok", result)
         return result
@@ -189,13 +238,13 @@ def run_quality_scoring():
         session.close()
 
 
-@celery_app.task(name="backend.celery_tasks.run_weather_sync")
-def run_weather_sync():
+@celery_app.task(name="backend.celery_tasks.run_weather_sync", bind=True, max_retries=3, default_retry_delay=60)
+def run_weather_sync(self):
     """Sync weather alerts for all active destinations from a weather API."""
     log.info("Celery: Starting weather sync...")
     from backend.tasks.weather_sync import sync_weather_alerts
 
-    result = _run_and_record("weather_sync", sync_weather_alerts)
+    result = _run_task_with_retry(self, "run_weather_sync", lambda: _run_and_record("weather_sync", sync_weather_alerts))
     log.info("Celery: Weather sync complete.")
     return result
 
@@ -303,24 +352,28 @@ def generate_itinerary_job(job_id: str):
         session.close()
 
 
-@celery_app.task(name="backend.celery_tasks.run_post_trip_summaries")
-def run_post_trip_summaries():
+@celery_app.task(name="backend.celery_tasks.run_post_trip_summaries", bind=True, max_retries=3, default_retry_delay=60)
+def run_post_trip_summaries(self):
     """Generate post-trip summaries for recently completed trips."""
     log.info("Celery: Starting post-trip summary generation...")
     from backend.tasks.post_trip import generate_post_trip_summaries
 
-    result = _run_and_record("post_trip", generate_post_trip_summaries)
+    result = _run_task_with_retry(
+        self,
+        "run_post_trip_summaries",
+        lambda: _run_and_record("post_trip", generate_post_trip_summaries),
+    )
     log.info("Celery: Post-trip summaries done.")
     return result
 
 
-@celery_app.task(name="backend.celery_tasks.run_embedding_sync")
-def run_embedding_sync():
+@celery_app.task(name="backend.celery_tasks.run_embedding_sync", bind=True, max_retries=3, default_retry_delay=60)
+def run_embedding_sync(self):
     """Sync destination embeddings for semantic recommendations."""
     log.info("Celery: Starting embedding sync...")
     from backend.tasks.embedding_sync import sync_embeddings
 
-    result = _run_and_record("embedding_sync", sync_embeddings)
+    result = _run_task_with_retry(self, "run_embedding_sync", lambda: _run_and_record("embedding_sync", sync_embeddings))
     log.info("Celery: Embedding sync complete.")
     return result
 
