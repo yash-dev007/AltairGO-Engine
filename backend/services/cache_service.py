@@ -209,3 +209,8 @@ def set_cached_polish(attraction_id: int, style: str, polish_data: dict):
         return None
 
     return _redis_call("set_polish", None, _store)
+
+
+def get_redis_client():
+    """Return the Redis client instance, or None if Redis is unavailable."""
+    return _r if REDIS_OK else None
