@@ -1,5 +1,6 @@
 import logging
 import os
+from http import HTTPStatus
 from uuid import uuid4
 from dotenv import load_dotenv
 
@@ -16,11 +17,19 @@ from sqlalchemy import text
 from backend import database
 from backend.celery_config import celery_app
 from backend.extensions import limiter
+from backend.middleware.logging import register_logging_middleware
 
 log = structlog.get_logger(__name__)
 
 
 _logging_configured = False
+_ERROR_CODE_BY_STATUS = {
+    400: "ERR_VALIDATION",
+    401: "ERR_UNAUTHORIZED",
+    403: "ERR_UNAUTHORIZED",
+    404: "ERR_NOT_FOUND",
+    429: "ERR_RATE_LIMIT",
+}
 
 def _configure_logging():
     global _logging_configured
@@ -74,6 +83,44 @@ def _assert_required_config(app, test_config=None):
         assert configured_value, f"Missing required env var: {var}"
 
 
+def _error_code_for_status(status_code: int) -> str:
+    return _ERROR_CODE_BY_STATUS.get(status_code, "ERR_SERVER")
+
+
+def _normalize_json_response(app: Flask, response):
+    if request.path == "/health" or not response.is_json:
+        return response
+
+    payload = response.get_json(silent=True)
+    if payload is None:
+        return response
+
+    if isinstance(payload, dict):
+        normalized = dict(payload)
+        normalized.setdefault("success", response.status_code < 400)
+        if response.status_code >= 400:
+            normalized.setdefault("code", _error_code_for_status(response.status_code))
+            if "error" not in normalized:
+                normalized["error"] = normalized.pop(
+                    "message", HTTPStatus(response.status_code).phrase
+                )
+    elif isinstance(payload, list):
+        return response
+    elif response.status_code < 400:
+        normalized = {"success": True, "data": payload}
+    else:
+        normalized = {
+            "success": False,
+            "error": HTTPStatus(response.status_code).phrase,
+            "code": _error_code_for_status(response.status_code),
+            "data": payload,
+        }
+
+    response.set_data(app.json.dumps(normalized))
+    response.content_length = len(response.get_data())
+    return response
+
+
 def create_app(test_config=None):
     _configure_logging()
 
@@ -101,6 +148,7 @@ def create_app(test_config=None):
     CORS(app, origins=_parse_allowed_origins(app.config.get("ALLOWED_ORIGINS")))
 
     database.configure_database(app, app.config["SQLALCHEMY_DATABASE_URI"])
+    register_logging_middleware(app)
     _eager = bool(app.config.get("TESTING")) or os.getenv("DEV_EAGER", "false").lower() in ("1", "true", "yes")
     celery_app.conf.task_always_eager = _eager
     celery_app.conf.task_eager_propagates = _eager
@@ -118,6 +166,7 @@ def create_app(test_config=None):
 
     @app.after_request
     def attach_request_metadata(response):
+        response = _normalize_json_response(app, response)
         response.headers["X-Request-Id"] = getattr(g, "request_id", "")
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
@@ -125,7 +174,6 @@ def create_app(test_config=None):
         response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
         if not app.debug:
             response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
-        log.info("request.completed", status_code=response.status_code)
         return response
 
     @app.teardown_request
@@ -150,6 +198,7 @@ def create_app(test_config=None):
     from backend.routes.blogs import blogs_bp
     from backend.routes.feedback import feedback_bp
     from backend.routes.webhooks import webhooks_bp
+    from backend.metrics import metrics_bp
 
     app.register_blueprint(trips_bp)
     app.register_blueprint(admin_bp)
@@ -169,6 +218,7 @@ def create_app(test_config=None):
     app.register_blueprint(blogs_bp)
     app.register_blueprint(feedback_bp)
     app.register_blueprint(webhooks_bp)
+    app.register_blueprint(metrics_bp)
 
     # Register Booking.com affiliate provider for hotel bookings (no-op when
     # BOOKINGCOM_AFFILIATE_ID is not set — SimulatedProvider is used instead).
@@ -214,12 +264,16 @@ def create_app(test_config=None):
             return jsonify({
                 "error": exc.description,
                 "request_id": getattr(g, "request_id", None),
+                "code": _error_code_for_status(exc.code or 500),
+                "success": False,
             }), exc.code
 
         log.exception("unhandled_exception", error=str(exc))
         return jsonify({
             "error": "Internal server error",
             "request_id": getattr(g, "request_id", None),
+            "code": "ERR_SERVER",
+            "success": False,
         }), 500
 
     return app
