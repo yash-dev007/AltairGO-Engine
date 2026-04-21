@@ -12,12 +12,12 @@
 [![Redis](https://img.shields.io/badge/Redis-7-DC382D?style=flat-square&logo=redis&logoColor=white)](https://redis.io)
 [![Celery](https://img.shields.io/badge/Celery-5-37814A?style=flat-square&logo=celery&logoColor=white)](https://docs.celeryq.dev)
 [![Gemini 2.0](https://img.shields.io/badge/Gemini-2.0%20Flash-4285F4?style=flat-square&logo=google&logoColor=white)](https://deepmind.google/technologies/gemini/)
-[![Tests](https://img.shields.io/badge/Tests-188%20passed-22c55e?style=flat-square)](backend/tests/)
+[![Tests](https://img.shields.io/badge/Tests-198%20passed-22c55e?style=flat-square)](backend/tests/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
 
 <br/>
 
-[Quick Start](#-quick-start) &bull; [Architecture](#-architecture) &bull; [API Reference](#-api-reference) &bull; [Features](#-traveler-features) &bull; [Deployment](#-deployment)
+[Quick Start](#-quick-start) &bull; [Architecture](#-architecture) &bull; [API Reference](#-api-reference) &bull; [Features](#-traveler-features) &bull; [Deployment](#-deployment) &bull; [Roadmap](#-roadmap)
 
 </div>
 
@@ -40,7 +40,9 @@ The frontend lives in a separate repository: [AltairGO-Platform](https://github.
 | **Discover & Compare** | Recommend by budget/season/traveler; side-by-side compare; budget estimator before generation |
 | **Day-of intelligence** | Daily briefing: carry list, weather alerts, crowd warnings, confirmed bookings, emergency contacts |
 | **Geospatial clustering** | H3 hexagonal cells (~5km) for walkable day plans |
-| **188 passing tests** | Auth, API contracts, engine, pipeline, validation — SQLite in-memory, no external services |
+| **198 passing tests** | Auth, API contracts, engine, pipeline, validation — SQLite in-memory, no external services |
+| **Operational metrics** | `/api/metrics` (admin-only): polished rate, cache hit rate, gen latency, embedding coverage, worker liveness |
+| **Structured error envelopes** | All routes return `{success, data?, error?, code}` — `ERR_VALIDATION`, `ERR_UNAUTHORIZED`, `ERR_NOT_FOUND`, `ERR_RATE_LIMIT`, `ERR_SERVER` |
 
 ---
 
@@ -263,11 +265,27 @@ POST /api/webhooks/<provider>      — booking webhook (HMAC-SHA256)
 ## Testing
 
 ```bash
-python -m pytest backend/tests/ -q --tb=short   # 188 passed, 1 skipped
+python -m pytest backend/tests/ -q --tb=short   # 198 passed, 1 skipped
 python -m pytest backend/tests/ -k "test_generate" -q   # filter by name
 ```
 
 Runs against SQLite in-memory + memory:// rate limiter (`TESTING=true`). No external services required.
+
+---
+
+## Roadmap
+
+**Current status (2026-04-21):** Production-ready core. Hardening sprints (Track A visual identity, Track B admin console, Track C error envelopes) complete. 198/198 tests green.
+
+**Next phase — Quality-First Strategic Roadmap** — detailed plan in [`docs/superpowers/plans/2026-04-21-quality-first-strategic-roadmap.md`](docs/superpowers/plans/2026-04-21-quality-first-strategic-roadmap.md).
+
+**Phase 0 (4–6 weeks):** Build eval infrastructure — golden dataset of 50 canonical prompts, 10-dimension quality harness (factual accuracy, closed-days violations, route sensibility, budget accuracy, pacing, personalization fidelity, narrative polish, safety info, diversity, latency), CI quality gates, A/B prompt harness, polish-failure detector, schema-drift CI, funnel instrumentation, prompt-injection hardening.
+
+**Phase 1 (6–10 weeks):** Quality lifts — polish reliability (kill Gemini 429 cliff), embedding generation on 190 destinations + 11,539 attractions, attraction data enrichment (closed_days, opening_hours, accessibility), pacing heuristics, route optimizer upgrades, prompt engineering cycles via A/B harness, schema reconciliation.
+
+**Phase 3 before Phase 2:** Monetization (Booking.com + flight + activity affiliates, pricing tiers via Razorpay) takes precedence over Personalization. Personalization without repeat users is unlearnable; BD runs in parallel during Phase 1.
+
+**Phase 4–5:** Programmatic SEO (15,200 long-tail pages), sharing virality, mobile conversion, day-of intelligence, geographic expansion (Sri Lanka, Bhutan, Nepal first).
 
 ---
 
