@@ -91,7 +91,21 @@ def _run_task_with_retry(task, task_name: str, runner):
         _write_task_result(task_name, "success", time.monotonic() - start)
         return result
     except Exception as exc:
-        _write_task_result(task_name, "failed", time.monotonic() - start, str(exc))
+        duration = time.monotonic() - start
+        # Celery sets request.retries to the number of retries already attempted.
+        # When it equals (or exceeds) max_retries, the next retry() raises MaxRetriesExceededError
+        # rather than rescheduling — this is the terminal attempt.
+        retries_done = getattr(getattr(task, "request", None), "retries", 0) or 0
+        max_retries = getattr(task, "max_retries", 0) or 0
+        is_terminal = retries_done >= max_retries
+
+        if is_terminal:
+            # Only terminal failures count as real failures — these go into the error ring
+            # buffer so admins can see genuine permanent failures without retry-storm noise.
+            _write_task_result(task_name, "gave_up", duration, str(exc))
+            raise
+        # Non-terminal: record that we're retrying but do NOT push to celery:errors
+        _write_task_result(task_name, "retrying", duration)
         raise task.retry(exc=exc)
 
 
@@ -303,9 +317,10 @@ def generate_itinerary_job(job_id: str):
             strict_validation=_is_truthy(os.getenv("VALIDATION_STRICT", "false")),
         )
         elapsed = time.monotonic() - start_time
-        from backend.services.metrics_service import record_generation_time
+        from backend.services.metrics_service import record_generation_time, incr_daily_counter
         record_generation_time(elapsed)
-        
+        incr_daily_counter("metrics:trips_generated")
+
         set_cached(cache_prefs, result)
 
         # Publish to job-specific Redis stream so SSE subscribers get instant notification

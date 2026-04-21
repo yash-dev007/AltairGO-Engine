@@ -76,6 +76,22 @@ def test_metrics_endpoint_returns_expected_fields(client, admin_headers):
     ]
     for field in expected_fields:
         assert field in data, f"Missing field: {field}"
+    # embedding_coverage_pct must be on a 0-100 scale (not a 0-1 ratio)
+    assert 0.0 <= data["embedding_coverage_pct"] <= 100.0
+    # cache_hit_rate stays a 0-1 ratio
+    assert 0.0 <= data["cache_hit_rate"] <= 1.0
+
+
+def test_reorder_activity_rejects_non_integer_indices(client, auth_headers, saved_trip_id):
+    resp = client.post(
+        f"/api/trip/{saved_trip_id}/reorder-activity",
+        json={"day_index": "0", "from_index": 0, "to_index": 1},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 400
+    body = resp.get_json()
+    assert body["success"] is False
+    assert body["code"] == "ERR_VALIDATION"
 
 
 def test_reorder_activity_swaps_positions(client, auth_headers, saved_trip_id):

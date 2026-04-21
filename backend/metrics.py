@@ -7,8 +7,10 @@ from flask import Blueprint, jsonify
 from backend.database import db
 from backend.models import AsyncJob, Destination
 from backend.utils.auth import require_admin
+from backend.utils.responses import normalize_api_response
 
 metrics_bp = Blueprint("metrics", __name__)
+metrics_bp.after_request(normalize_api_response)
 
 
 @metrics_bp.get("/api/metrics")
@@ -19,17 +21,17 @@ def get_metrics():
     client = get_redis_client()
     trips_24h = 0
     cache_hits = 0
-    cache_total = 0
+    cache_misses = 0
     gemini_429 = 0
     worker_alive = False
     redis_memory_mb = 0.0
 
     if client is not None:
-        trips_24h = int(client.get("metrics:trips_generated_24h") or 0)
-        cache_hits = int(client.get("metrics:cache_hits") or 0)
-        cache_total = int(client.get("metrics:cache_total") or 0)
-        gemini_429 = int(client.get("metrics:gemini_429_24h") or 0)
-        heartbeat = client.get("celery:heartbeat") or client.get("heartbeat:worker:last_seen")
+        trips_24h = int(client.get("metrics:trips_generated:today") or 0)
+        cache_hits = int(client.get("metrics:cache_hits:today") or 0)
+        cache_misses = int(client.get("metrics:cache_misses:today") or 0)
+        gemini_429 = int(client.get("metrics:gemini_429:today") or 0)
+        heartbeat = client.get("heartbeat:worker:last_seen")
         if heartbeat:
             try:
                 timestamp = datetime.fromisoformat(heartbeat)
@@ -41,6 +43,7 @@ def get_metrics():
         except Exception:
             redis_memory_mb = 0.0
 
+    cache_total = cache_hits + cache_misses
     cache_hit_rate = round(cache_hits / cache_total, 3) if cache_total > 0 else 0.0
 
     try:
@@ -51,7 +54,9 @@ def get_metrics():
     try:
         total_destinations = db.session.query(Destination).count()
         embedded_destinations = db.session.query(Destination).filter(Destination.embedding.isnot(None)).count()
-        embedding_coverage_pct = round(embedded_destinations / total_destinations, 3) if total_destinations else 0.0
+        embedding_coverage_pct = (
+            round((embedded_destinations / total_destinations) * 100, 1) if total_destinations else 0.0
+        )
     except Exception:
         embedding_coverage_pct = 0.0
 

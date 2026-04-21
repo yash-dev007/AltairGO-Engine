@@ -1,6 +1,5 @@
 import logging
 import os
-from http import HTTPStatus
 from uuid import uuid4
 from dotenv import load_dotenv
 
@@ -18,18 +17,13 @@ from backend import database
 from backend.celery_config import celery_app
 from backend.extensions import limiter
 from backend.middleware.logging import register_logging_middleware
+from backend.utils.responses import error_code_for_status
 
 log = structlog.get_logger(__name__)
 
 
 _logging_configured = False
-_ERROR_CODE_BY_STATUS = {
-    400: "ERR_VALIDATION",
-    401: "ERR_UNAUTHORIZED",
-    403: "ERR_UNAUTHORIZED",
-    404: "ERR_NOT_FOUND",
-    429: "ERR_RATE_LIMIT",
-}
+
 
 def _configure_logging():
     global _logging_configured
@@ -83,44 +77,6 @@ def _assert_required_config(app, test_config=None):
         assert configured_value, f"Missing required env var: {var}"
 
 
-def _error_code_for_status(status_code: int) -> str:
-    return _ERROR_CODE_BY_STATUS.get(status_code, "ERR_SERVER")
-
-
-def _normalize_json_response(app: Flask, response):
-    if request.path == "/health" or not response.is_json:
-        return response
-
-    payload = response.get_json(silent=True)
-    if payload is None:
-        return response
-
-    if isinstance(payload, dict):
-        normalized = dict(payload)
-        normalized.setdefault("success", response.status_code < 400)
-        if response.status_code >= 400:
-            normalized.setdefault("code", _error_code_for_status(response.status_code))
-            if "error" not in normalized:
-                normalized["error"] = normalized.pop(
-                    "message", HTTPStatus(response.status_code).phrase
-                )
-    elif isinstance(payload, list):
-        return response
-    elif response.status_code < 400:
-        normalized = {"success": True, "data": payload}
-    else:
-        normalized = {
-            "success": False,
-            "error": HTTPStatus(response.status_code).phrase,
-            "code": _error_code_for_status(response.status_code),
-            "data": payload,
-        }
-
-    response.set_data(app.json.dumps(normalized))
-    response.content_length = len(response.get_data())
-    return response
-
-
 def create_app(test_config=None):
     _configure_logging()
 
@@ -166,7 +122,6 @@ def create_app(test_config=None):
 
     @app.after_request
     def attach_request_metadata(response):
-        response = _normalize_json_response(app, response)
         response.headers["X-Request-Id"] = getattr(g, "request_id", "")
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
@@ -264,7 +219,7 @@ def create_app(test_config=None):
             return jsonify({
                 "error": exc.description,
                 "request_id": getattr(g, "request_id", None),
-                "code": _error_code_for_status(exc.code or 500),
+                "code": error_code_for_status(exc.code or 500),
                 "success": False,
             }), exc.code
 

@@ -315,6 +315,7 @@ Return ONLY this JSON (no markdown, no extra text):
                 log.warning(f"Gemini call failed on {model} with {response.status_code} in {elapsed_ms}ms")
 
                 if response.status_code == 429:
+                    incr_daily_counter("metrics:gemini_429")
                     wait_s = 2 ** (_attempt + 1)
                     log.warning(f"Gemini rate limited on {model}, waiting {wait_s}s before fallback")
                     time.sleep(wait_s)

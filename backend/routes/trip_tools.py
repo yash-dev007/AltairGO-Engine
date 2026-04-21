@@ -724,6 +724,16 @@ def reorder_activity(trip_id: int):
             "code": "ERR_VALIDATION",
         }), 400
 
+    # bool is a subclass of int in Python — reject it explicitly so {"day_index": true}
+    # isn't silently coerced to index 1.
+    for value in (day_index, from_index, to_index):
+        if not isinstance(value, int) or isinstance(value, bool):
+            return jsonify({
+                "success": False,
+                "error": "day_index, from_index, and to_index must be integers",
+                "code": "ERR_VALIDATION",
+            }), 400
+
     trip = db.session.get(Trip, trip_id)
     if not trip or trip.user_id != user_id:
         return jsonify({
