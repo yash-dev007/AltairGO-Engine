@@ -1,9 +1,15 @@
 import logging
 import os
+import sys
 from uuid import uuid4
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# Allow running this file directly from the `backend/` directory.
+# Example: `python app.py`
+if __package__ is None or __package__ == "":
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import redis
 import structlog
