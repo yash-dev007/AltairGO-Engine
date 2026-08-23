@@ -1,0 +1,31 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(xargs wc:*)",
+      "Bash(python -m pytest backend/tests/ -q --tb=short)",
+      "Bash(.venv/Scripts/python.exe -m pytest backend/tests/ -q --tb=short)",
+      "Read(//d/Projects/AltairGO-Platform/**)",
+      "Bash(npm run:*)",
+      "mcp__claude_ai_Supabase__execute_sql",
+      "mcp__claude_ai_Supabase__apply_migration",
+      "Bash(python -m backend.scripts.init_settings)",
+      "Bash(python -c \":*)",
+      "Bash(curl -s \"http://127.0.0.1:5000/get-itinerary-status/42c5009d-da12-43c3-b728-98de04fe7213\")",
+      "Bash(timeout 180 python -m pytest backend/tests/ -q --tb=short --no-header)",
+      "Bash(echo \"EXIT:$?\")",
+      "Read(//c/Users/yashp/.claude/plugins/marketplaces/playwright-skill/skills/playwright-skill/**)",
+      "Bash(node -e \"require\\(''./lib/helpers''\\).detectDevServers\\(\\).then\\(s => console.log\\(JSON.stringify\\(s\\)\\)\\)\")",
+      "Bash(SKILL_DIR=\"/c/Users/yashp/.claude/plugins/marketplaces/playwright-skill/skills/playwright-skill\")",
+      "Read(//d/Projects/AltairGO Engine/**)",
+      "Bash(node run.js altairgo-audit.js)",
+      "Bash(xargs grep:*)",
+      "Read(//d/Projects/AltairGO Platform/**)",
+      "Bash(npx vite:*)",
+      "Bash(node run.js \"C:/Users/yashp/AppData/Local/Temp/playwright-test-remaining.js\")",
+      "Bash(powershell.exe -Command \"Select-String -Path 'D:\\\\Projects\\\\AltairGO Platform\\\\src\\\\pages\\\\trips\\\\TripViewerPage.jsx' -Pattern 'tab|Tab' | Select-Object -First 20 LineNumber, Line\")",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(json.dumps\\({k:v for k,v in d.items\\(\\) if k in \\(''''mcpServers'''',''''numStartups''''\\)}, indent=2\\)\\)\")",
+      "Bash(node tests/p1_booking_debug.cjs)",
+      "Bash(python -m pytest backend/tests/test_auth.py::test_register -v --tb=short)"
+    ]
+  }
+}
